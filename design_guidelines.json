@@ -1,0 +1,99 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "rationale": "For a dense real estate property management dashboard, clarity, authority, and data legibility are paramount. A Swiss High-Contrast archetype ensures maximum readability for complex data matrices (like the EMI tracker) and allows the user's custom brand colors to serve as functional accents rather than decorative noise.",
+  "typography": {
+    "fonts": {
+      "heading": "Outfit",
+      "body": "IBM Plex Sans",
+      "mono": "JetBrains Mono"
+    },
+    "scale": {
+      "h1": "text-3xl md:text-4xl tracking-tight font-semibold text-neutral-950",
+      "h2": "text-xl md:text-2xl tracking-tight font-medium text-neutral-900",
+      "h3": "text-lg md:text-xl tracking-tight font-medium text-neutral-900",
+      "body": "text-sm text-neutral-700 leading-relaxed",
+      "small": "text-xs tracking-widest uppercase text-neutral-500 font-medium",
+      "data": "text-sm font-mono tracking-tight text-neutral-800"
+    },
+    "rules": [
+      "Headings must use Outfit for a clean, architectural real estate feel.",
+      "Financial data (amounts, dates, matrix cells) MUST use JetBrains Mono to align numbers perfectly.",
+      "Never center-align data tables; always left-align strings, right-align numbers.",
+      "Ensure hierarchy jump between headings doesn't exceed 2 tailwind steps."
+    ]
+  },
+  "colors": {
+    "palette": {
+      "background": "#FAFAFA",
+      "surface": "#FFFFFF",
+      "border": "#E5E5E5",
+      "text_primary": "#0A0A0A",
+      "text_secondary": "#525252",
+      "accent_default": "#0052CC",
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444",
+      "pending": "#9CA3AF"
+    },
+    "theming_strategy": "The primary accent color must be a CSS variable (--primary) configurable via the Brand Settings Panel. The base UI must remain strictly monochrome (White, 10% Grey) to ensure the custom brand color always contrasts well. Dynamic brand color should be injected into the Shadcn config variables."
+  },
+  "layout_and_spacing": {
+    "grid_system": "MODE B: THE CONTROL ROOM GRID",
+    "spacing_scale": "Tailwind standard, utilizing generous p-6 to p-8 padding for all primary container cards, but dense gap-4 for data matrices to ensure high density scanning.",
+    "rules": [
+      "Use BENTO grids for dashboard metrics (grid-cols-1 md:grid-cols-2 lg:grid-cols-4).",
+      "All dashboard widgets must use h-full to align heights.",
+      "Data matrix (month/customer) must be strictly tabular, utilizing overflow-x-auto for horizontal scrolling.",
+      "Cards: 1px subtle border (border-neutral-200), no drop-shadows by default. Hover adds slight shadow-sm."
+    ]
+  },
+  "components": {
+    "cards": "Flat background (bg-white), 1px solid border (border-neutral-200), rounded-lg. No glassmorphism, completely solid to avoid data refraction.",
+    "tables": "Shadcn Table heavily customized. Sticky header (bg-neutral-50), subtle hover on rows (hover:bg-neutral-50/50). Tabular data padding should be dense (py-2 px-3).",
+    "buttons": "Shadcn Button. Primary buttons use the dynamic brand color. Secondary are outline with text-foreground. Include specific data-testid on every button.",
+    "inputs": "Shadcn Input/Select. Focus state must use ring-2 with the primary brand color.",
+    "badges": "For payment status: bg-emerald-100 text-emerald-800 (Paid), bg-rose-100 text-rose-800 (Overdue), bg-amber-100 text-amber-800 (Partial), bg-neutral-100 text-neutral-600 (Pending). Rounded-full, px-2.5 py-0.5, text-xs font-medium.",
+    "icons": "Use @phosphor-icons/react (Duotone weight for high-end feel, Regular for dense tables)."
+  },
+  "motion_and_interaction": {
+    "hover_states": "Tables rows darken slightly. Buttons lift slightly (-translate-y-[1px]).",
+    "transitions": "Use 'transition-all duration-200 ease-out' universally.",
+    "loading": "Use clean, monochrome skeleton loaders (Shadcn Skeleton). Avoid spinners where possible for a more structural feel.",
+    "modals": "Slide-in drawers from the right (Shadcn Sheet) are preferred over center modals for payment recording, to keep context of the matrix grid visible."
+  },
+  "key_views_instructions": {
+    "dashboard_home": "Bento grid for top stats (Collections, Overdue, Active, Penalty). Area chart (Recharts) for collection trends over time. List of recent overdue items below.",
+    "payment_tracker_matrix": "Complex dense table. Rows: Customers/Properties. Columns: Months (Jan, Feb, etc.). Cells contain Payment Badges. Clicking a cell opens a Sheet to record full/partial payment or waive penalty.",
+    "customer_profile": "Split view: Left narrow column for profile details (photo, contact, property info, active EMI), Right wide column for tabbed content: Full Payment History and WhatsApp Message Logs.",
+    "brand_settings": "Simple form with Shadcn Color Picker (or text input for HEX), Tagline input, and Logo upload drag-and-drop zone. Shows a live preview card of how the brand looks.",
+    "whatsapp_center": "Split pane: Left side list of target customers (filtered by overdue/pending/reminders), Right side message preview/composer and Bulk Send CTA."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "login_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/642abacf-3b1c-45a8-b399-9414888db00a/images/e42602878d9495a5735f4fa5c98bc0f36e98182449f33f9b6e69456c7e2a252f.png",
+        "description": "Abstract Swiss architectural geometric background for the login page."
+      },
+      {
+        "category": "default_brand_logo",
+        "url": "https://static.prod-images.emergentagent.com/jobs/642abacf-3b1c-45a8-b399-9414888db00a/images/0253a2b5ec1ac70a5026ab79927a8cd5dc5270ccdc79642b09e643faf800d2cb.png",
+        "description": "Default geometric logo for the brand settings preview before the user uploads their own."
+      },
+      {
+        "category": "user_avatar_1",
+        "url": "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwyfHxoZWFkc2hvdCUyMHByb2Zlc3Npb25hbHxlbnwwfHx8fDE3NzQ4Njc5Mjl8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Professional male headshot for customer profile placeholder."
+      },
+      {
+        "category": "user_avatar_2",
+        "url": "https://images.unsplash.com/photo-1685760259914-ee8d2c92d2e0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwxfHxoZWFkc2hvdCUyMHByb2Zlc3Npb25hbHxlbnwwfHx8fDE3NzQ4Njc5Mjl8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Professional female headshot for customer profile placeholder."
+      }
+    ]
+  },
+  "testing": {
+    "rules": "All interactive elements, forms, matrix cells, and nav links MUST include a `data-testid` attribute formatted as kebab-case role-based names (e.g., `data-testid=\"payment-matrix-cell-january\"`)."
+  }
+}
