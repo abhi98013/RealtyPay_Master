@@ -399,8 +399,11 @@ async def check_overdue_payments():
     penalty_rate = brand.get("penalty_rate", 1.0) if brand else 1.0
 
     pending = await db.payments.find({"status": "pending"}, {"_id": 0}).to_list(5000)
+    cust_ids = list(set(p["customer_id"] for p in pending))
+    custs = await db.customers.find({"id": {"$in": cust_ids}}, {"_id": 0}).to_list(len(cust_ids)) if cust_ids else []
+    cust_map = {c["id"]: c for c in custs}
     for p in pending:
-        customer = await db.customers.find_one({"id": p["customer_id"]}, {"_id": 0})
+        customer = cust_map.get(p["customer_id"])
         if not customer:
             continue
         due_day = customer.get("due_date_day", 5)
@@ -544,8 +547,11 @@ async def dashboard_stats(request: Request):
     overdue_payments = [p for p in this_month_payments if p["status"] == "overdue"]
     overdue_payments.sort(key=lambda x: x.get("remaining", 0), reverse=True)
     top_overdue = []
+    top5_ids = list(set(p["customer_id"] for p in overdue_payments[:5]))
+    top5_custs = await db.customers.find({"id": {"$in": top5_ids}}, {"_id": 0}).to_list(len(top5_ids)) if top5_ids else []
+    top5_map = {c["id"]: c for c in top5_custs}
     for p in overdue_payments[:5]:
-        cust = await db.customers.find_one({"id": p["customer_id"]}, {"_id": 0})
+        cust = top5_map.get(p["customer_id"])
         top_overdue.append({
             "customer_name": cust["name"] if cust else "Unknown",
             "customer_id": p["customer_id"],
@@ -681,11 +687,9 @@ async def monthly_report_pdf(request: Request, month: int = 0, year: int = 0):
     footer_text = brand.get("footer_text", "")
 
     payments = await db.payments.find({"month": month, "year": year}, {"_id": 0}).to_list(5000)
-    customers_map = {}
-    for p in payments:
-        if p["customer_id"] not in customers_map:
-            c = await db.customers.find_one({"id": p["customer_id"]}, {"_id": 0})
-            customers_map[p["customer_id"]] = c
+    pay_cust_ids = list(set(p["customer_id"] for p in payments))
+    pay_custs = await db.customers.find({"id": {"$in": pay_cust_ids}}, {"_id": 0}).to_list(len(pay_cust_ids)) if pay_cust_ids else []
+    customers_map = {c["id"]: c for c in pay_custs}
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
