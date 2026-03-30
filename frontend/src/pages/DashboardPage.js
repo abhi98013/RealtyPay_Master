@@ -79,8 +79,8 @@ export default function DashboardPage() {
         {/* Collection Trend Chart */}
         <div className="lg:col-span-2 bg-white border border-neutral-200 rounded-lg p-6">
           <h3 className="text-sm font-semibold text-neutral-900 mb-4" style={{ fontFamily: 'Outfit' }}>Collection Trend</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64" style={{ minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height={256}>
               <AreaChart data={stats.trend || []}>
                 <defs>
                   <linearGradient id="colorCol" x1="0" y1="0" x2="0" y2="1">
