@@ -1,34 +1,71 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Custom App Styles */
+
+/* Sidebar */
+.sidebar-nav-item {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ease-out;
+}
+.sidebar-nav-item:hover {
+  @apply bg-neutral-100;
+}
+.sidebar-nav-item.active {
+  background-color: var(--brand-primary);
+  @apply text-white;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+/* Status badges */
+.status-paid {
+  @apply bg-emerald-100 text-emerald-800 rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+.status-pending {
+  @apply bg-neutral-100 text-neutral-600 rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+.status-overdue {
+  @apply bg-rose-100 text-rose-800 rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+.status-partial {
+  @apply bg-amber-100 text-amber-800 rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+.status-waived {
+  @apply bg-purple-100 text-purple-800 rounded-full px-2.5 py-0.5 text-xs font-medium;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Stat cards */
+.stat-card {
+  @apply bg-white border border-neutral-200 rounded-lg p-6 transition-all duration-200;
+}
+.stat-card:hover {
+  @apply shadow-sm;
 }
 
-.App-link {
-    color: #61dafb;
+/* Matrix cell */
+.matrix-cell {
+  @apply p-1.5 text-center cursor-pointer transition-all duration-200 border border-neutral-100 rounded;
+}
+.matrix-cell:hover {
+  @apply shadow-sm -translate-y-[1px];
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Page transitions */
+.page-enter {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-neutral-50;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-neutral-300 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-neutral-400;
 }
