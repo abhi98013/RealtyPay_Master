@@ -235,8 +235,171 @@ class RealtyPayAPITester:
 
     def test_reports(self) -> bool:
         """Test PDF report generation"""
-        # Monthly report
-        success1, _ = self.run_test("Monthly PDF Report", "GET", "reports/monthly-pdf?month=8&year=2024", 200)
+        # Monthly report - expect binary response, not JSON
+        try:
+            url = f"{self.base_url}/api/reports/monthly-pdf?month=8&year=2024"
+            headers = {'Authorization': f'Bearer {self.token}'}
+            response = self.session.get(url, headers=headers, cookies=self.cookies)
+            success1 = response.status_code == 200 and response.headers.get('content-type') == 'application/pdf'
+            self.log_test("Monthly PDF Report", success1, f"Status: {response.status_code}, Content-Type: {response.headers.get('content-type', 'unknown')}")
+        except Exception as e:
+            success1 = self.log_test("Monthly PDF Report", False, f"Exception: {str(e)}")
+        
+        return success1
+    def test_layout_management(self) -> Optional[str]:
+        """Test layout CRUD operations"""
+        # Create layout
+        layout_data = {
+            "name": "Test Layout - Sunrise Colony Phase 1",
+            "description": "Test layout for automated testing"
+        }
+        
+        success1, layout = self.run_test("Create Layout", "POST", "layouts", 200, data=layout_data)
+        if not success1:
+            return None
+            
+        layout_id = layout.get("id")
+        if not layout_id:
+            print("❌ No layout ID returned")
+            return None
+            
+        # List layouts
+        success2, layouts = self.run_test("List Layouts", "GET", "layouts", 200)
+        
+        # Get layout details
+        success3, layout_detail = self.run_test("Get Layout", "GET", f"layouts/{layout_id}", 200)
+        
+        if success1 and success2 and success3:
+            return layout_id
+        return None
+
+    def test_plot_management(self, layout_id: str) -> Optional[str]:
+        """Test plot CRUD operations"""
+        if not layout_id:
+            return None
+            
+        # Create plot A-12
+        plot_data = {
+            "layout_id": layout_id,
+            "plot_number": "A-12",
+            "length": 30.0,
+            "width": 40.0,
+            "plot_type": "residential",
+            "price_per_sqft": 500.0,
+            "status": "available"
+        }
+        
+        success1, plot = self.run_test("Create Plot A-12", "POST", "plots", 200, data=plot_data)
+        if not success1:
+            return None
+            
+        plot_id = plot.get("id")
+        if not plot_id:
+            print("❌ No plot ID returned")
+            return None
+            
+        # Verify area calculation (30 * 40 = 1200)
+        if plot.get("area") != 1200.0:
+            print(f"❌ Area calculation incorrect: expected 1200, got {plot.get('area')}")
+            return None
+        
+        # Create plot B-05
+        plot_data2 = {
+            "layout_id": layout_id,
+            "plot_number": "B-05",
+            "length": 25.0,
+            "width": 30.0,
+            "plot_type": "commercial",
+            "price_per_sqft": 600.0,
+            "status": "available"
+        }
+        
+        success2, plot2 = self.run_test("Create Plot B-05", "POST", "plots", 200, data=plot_data2)
+        
+        # Try creating duplicate plot A-12 (should fail)
+        success3, _ = self.run_test("Create Duplicate Plot A-12", "POST", "plots", 400, data=plot_data)
+        success3 = not success3  # We expect this to fail
+        
+        # List plots
+        success4, plots = self.run_test("List Plots", "GET", f"plots?layout_id={layout_id}", 200)
+        
+        # Get plot details
+        success5, plot_detail = self.run_test("Get Plot Details", "GET", f"plots/{plot_id}", 200)
+        
+        if success1 and success2 and success3 and success4 and success5:
+            return plot_id
+        return None
+
+    def test_plot_payments(self, plot_id: str) -> bool:
+        """Test plot payment operations"""
+        if not plot_id:
+            return False
+            
+        # Record plot payment
+        payment_data = {
+            "plot_id": plot_id,
+            "amount": 100000.0,
+            "payment_date": "2024-08-15",
+            "payment_mode": "upi",
+            "reference_number": "UPI123456",
+            "notes": "Test payment"
+        }
+        
+        success1, payment = self.run_test("Record Plot Payment", "POST", "plot-payments", 200, data=payment_data)
+        
+        # List plot payments
+        success2, payments = self.run_test("List Plot Payments", "GET", f"plot-payments?plot_id={plot_id}", 200)
+        
+        return success1 and success2
+
+    def test_plot_statements(self, plot_id: str) -> bool:
+        """Test plot statement generation"""
+        if not plot_id:
+            return False
+            
+        # Get plot statement
+        success1, statement = self.run_test("Get Plot Statement", "GET", f"plot-statements/{plot_id}", 200)
+        
+        # Test PDF statement generation
+        try:
+            url = f"{self.base_url}/api/plot-statements/{plot_id}/pdf"
+            headers = {'Authorization': f'Bearer {self.token}'}
+            response = self.session.get(url, headers=headers, cookies=self.cookies)
+            success2 = response.status_code == 200 and response.headers.get('content-type') == 'application/pdf'
+            self.log_test("Plot Statement PDF", success2, f"Status: {response.status_code}, Content-Type: {response.headers.get('content-type', 'unknown')}")
+        except Exception as e:
+            success2 = self.log_test("Plot Statement PDF", False, f"Exception: {str(e)}")
+        
+        return success1 and success2
+
+    def test_cashflow_stats(self) -> bool:
+        """Test cash flow statistics"""
+        success1, stats = self.run_test("Cash Flow Stats", "GET", "cashflow/stats", 200)
+        
+        if success1:
+            required_fields = ["total_plots", "sold_plots", "available_plots", "reserved_plots", 
+                             "total_value", "total_collected", "total_outstanding", "trend"]
+            missing_fields = [field for field in required_fields if field not in stats]
+            if missing_fields:
+                print(f"   Missing fields: {missing_fields}")
+                return False
+        
+        # Test cash flow statement
+        success2, statement = self.run_test("Cash Flow Statement", "GET", "cashflow/statement?period=monthly", 200)
+        
+        return success1 and success2
+
+    def test_map_upload(self, layout_id: str) -> bool:
+        """Test map upload functionality (mock test)"""
+        if not layout_id:
+            return False
+            
+        # List maps for layout
+        success1, maps = self.run_test("List Layout Maps", "GET", f"layouts/{layout_id}/maps", 200)
+        
+        # Note: We can't easily test file upload in this simple test framework
+        # but we can verify the endpoint exists and returns proper response
+        print("   Note: Map upload endpoint exists but file upload not tested in this framework")
         
         return success1
 
@@ -263,8 +426,16 @@ class RealtyPayAPITester:
             "whatsapp_mock": False,
             "dashboard_stats": False,
             "reports": False,
+            "layout_management": False,
+            "plot_management": False,
+            "plot_payments": False,
+            "plot_statements": False,
+            "cashflow_stats": False,
+            "map_upload": False,
             "logout": False,
-            "customer_id": None
+            "customer_id": None,
+            "layout_id": None,
+            "plot_id": None
         }
         
         # Test sequence
@@ -286,6 +457,23 @@ class RealtyPayAPITester:
                     results["payment_operations"] = self.test_payment_operations(customer_id)
                     results["whatsapp_mock"] = self.test_whatsapp_mock(customer_id)
                 
+                # Test new modules
+                layout_id = self.test_layout_management()
+                results["layout_id"] = layout_id
+                results["layout_management"] = layout_id is not None
+                
+                if layout_id:
+                    plot_id = self.test_plot_management(layout_id)
+                    results["plot_id"] = plot_id
+                    results["plot_management"] = plot_id is not None
+                    
+                    if plot_id:
+                        results["plot_payments"] = self.test_plot_payments(plot_id)
+                        results["plot_statements"] = self.test_plot_statements(plot_id)
+                    
+                    results["map_upload"] = self.test_map_upload(layout_id)
+                
+                results["cashflow_stats"] = self.test_cashflow_stats()
                 results["reports"] = self.test_reports()
                 results["logout"] = self.test_logout()
         
@@ -307,7 +495,7 @@ def main():
     failed_tests = []
     
     for test_name, result in results.items():
-        if test_name == "customer_id":
+        if test_name in ["customer_id", "layout_id", "plot_id"]:
             continue
         if result:
             passed_tests.append(test_name)

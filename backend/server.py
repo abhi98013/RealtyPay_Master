@@ -178,6 +178,12 @@ async def startup():
     await db.customers.create_index("id", unique=True)
     await db.payments.create_index([("customer_id", 1), ("month", 1), ("year", 1)])
     await db.messages.create_index("customer_id")
+    await db.layouts.create_index("id", unique=True)
+    await db.plots.create_index("id", unique=True)
+    await db.plots.create_index([("layout_id", 1), ("plot_number", 1)], unique=True)
+    await db.plot_payments.create_index("plot_id")
+    await db.layout_maps.create_index("layout_id")
+    await db.audit_log.create_index("created_at")
     # Seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@realtypay.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
@@ -796,6 +802,538 @@ async def annual_statement_pdf(customer_id: str, request: Request, year: int = 0
     doc.build(elements)
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=annual_{customer['name']}_{year}.pdf"})
+
+# ═══════════════════════════════════════════
+#  MODULE 1: LAYOUTS & PLOTS
+# ═══════════════════════════════════════════
+
+class LayoutInput(BaseModel):
+    name: str
+    description: str = ""
+
+class PlotInput(BaseModel):
+    layout_id: str
+    plot_number: str
+    length: float
+    width: float
+    plot_type: str = "residential"
+    price_per_sqft: float
+    status: str = "available"
+
+class PlotUpdateInput(BaseModel):
+    plot_number: str = ""
+    length: float = 0
+    width: float = 0
+    plot_type: str = ""
+    price_per_sqft: float = 0
+    status: str = ""
+    customer_id: str = ""
+    customer_name: str = ""
+    booking_date: str = ""
+    agreement_date: str = ""
+
+class PlotPaymentInput(BaseModel):
+    plot_id: str
+    amount: float
+    payment_date: str
+    payment_mode: str
+    cheque_number: str = ""
+    reference_number: str = ""
+    notes: str = ""
+
+# --- Layouts CRUD ---
+@api_router.get("/layouts")
+async def list_layouts(request: Request):
+    await get_current_user(request)
+    layouts = await db.layouts.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    for layout in layouts:
+        layout["plot_count"] = await db.plots.count_documents({"layout_id": layout["id"]})
+        layout["sold_count"] = await db.plots.count_documents({"layout_id": layout["id"], "status": "sold"})
+        layout["available_count"] = await db.plots.count_documents({"layout_id": layout["id"], "status": "available"})
+        layout["reserved_count"] = await db.plots.count_documents({"layout_id": layout["id"], "status": "reserved"})
+    return layouts
+
+@api_router.post("/layouts")
+async def create_layout(inp: LayoutInput, request: Request):
+    user = await get_current_user(request)
+    doc = {
+        "id": str(uuid.uuid4()), "name": inp.name, "description": inp.description,
+        "created_at": datetime.now(timezone.utc).isoformat(), "created_by": user["id"]
+    }
+    await db.layouts.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.get("/layouts/{layout_id}")
+async def get_layout(layout_id: str, request: Request):
+    await get_current_user(request)
+    layout = await db.layouts.find_one({"id": layout_id}, {"_id": 0})
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+    plots = await db.plots.find({"layout_id": layout_id}, {"_id": 0}).sort("plot_number", 1).to_list(1000)
+    maps = await db.layout_maps.find({"layout_id": layout_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {**layout, "plots": plots, "maps": maps}
+
+@api_router.put("/layouts/{layout_id}")
+async def update_layout(layout_id: str, inp: LayoutInput, request: Request):
+    await get_current_user(request)
+    await db.layouts.update_one({"id": layout_id}, {"$set": {"name": inp.name, "description": inp.description, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    layout = await db.layouts.find_one({"id": layout_id}, {"_id": 0})
+    return layout
+
+@api_router.delete("/layouts/{layout_id}")
+async def delete_layout(layout_id: str, request: Request):
+    user = await require_role("admin")(request)
+    await db.layouts.delete_one({"id": layout_id})
+    await db.plots.delete_many({"layout_id": layout_id})
+    await db.layout_maps.delete_many({"layout_id": layout_id})
+    await _audit_log(user, "delete_layout", "layout", layout_id, {"layout_id": layout_id})
+    return {"message": "Layout deleted"}
+
+# --- Plots CRUD ---
+@api_router.post("/plots")
+async def create_plot(inp: PlotInput, request: Request):
+    user = await get_current_user(request)
+    if inp.length <= 0 or inp.width <= 0:
+        raise HTTPException(status_code=400, detail="Length and Width must be positive numbers")
+    if inp.price_per_sqft <= 0:
+        raise HTTPException(status_code=400, detail="Price per sq. ft must be greater than 0")
+    existing = await db.plots.find_one({"layout_id": inp.layout_id, "plot_number": inp.plot_number}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Plot already exists with this number in this layout")
+    area = round(inp.length * inp.width, 2)
+    total_price = round(area * inp.price_per_sqft, 2)
+    doc = {
+        "id": str(uuid.uuid4()), "layout_id": inp.layout_id,
+        "plot_number": inp.plot_number, "length": inp.length, "width": inp.width,
+        "area": area, "plot_type": inp.plot_type, "price_per_sqft": inp.price_per_sqft,
+        "total_price": total_price, "status": inp.status,
+        "customer_id": "", "customer_name": "", "booking_date": "", "agreement_date": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.plots.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.get("/plots")
+async def list_plots(request: Request, layout_id: str = ""):
+    await get_current_user(request)
+    query = {}
+    if layout_id:
+        query["layout_id"] = layout_id
+    plots = await db.plots.find(query, {"_id": 0}).sort("plot_number", 1).to_list(2000)
+    return plots
+
+@api_router.get("/plots/{plot_id}")
+async def get_plot(plot_id: str, request: Request):
+    await get_current_user(request)
+    plot = await db.plots.find_one({"id": plot_id}, {"_id": 0})
+    if not plot:
+        raise HTTPException(status_code=404, detail="Plot not found")
+    payments = await db.plot_payments.find({"plot_id": plot_id, "is_deleted": False}, {"_id": 0}).sort("payment_date", -1).to_list(500)
+    total_paid = sum(p.get("amount", 0) for p in payments)
+    remaining = max(0, plot.get("total_price", 0) - total_paid)
+    return {**plot, "payments": payments, "total_paid": total_paid, "remaining_balance": remaining}
+
+@api_router.put("/plots/{plot_id}")
+async def update_plot(plot_id: str, inp: PlotUpdateInput, request: Request):
+    user = await get_current_user(request)
+    plot = await db.plots.find_one({"id": plot_id}, {"_id": 0})
+    if not plot:
+        raise HTTPException(status_code=404, detail="Plot not found")
+    update = {}
+    if inp.plot_number:
+        dup = await db.plots.find_one({"layout_id": plot["layout_id"], "plot_number": inp.plot_number, "id": {"$ne": plot_id}}, {"_id": 0})
+        if dup:
+            raise HTTPException(status_code=400, detail="Plot number already exists in this layout")
+        update["plot_number"] = inp.plot_number
+    if inp.length > 0 and inp.width > 0:
+        update["length"] = inp.length
+        update["width"] = inp.width
+        update["area"] = round(inp.length * inp.width, 2)
+        ppf = inp.price_per_sqft if inp.price_per_sqft > 0 else plot.get("price_per_sqft", 0)
+        update["total_price"] = round(update["area"] * ppf, 2)
+    if inp.price_per_sqft > 0:
+        update["price_per_sqft"] = inp.price_per_sqft
+        area = update.get("area", plot.get("area", 0))
+        update["total_price"] = round(area * inp.price_per_sqft, 2)
+    if inp.plot_type:
+        update["plot_type"] = inp.plot_type
+    if inp.status:
+        update["status"] = inp.status
+    if inp.customer_id:
+        if inp.customer_id == plot.get("customer_id") and plot.get("customer_id"):
+            pass
+        update["customer_id"] = inp.customer_id
+        update["customer_name"] = inp.customer_name
+    if inp.customer_id == "":
+        update["customer_id"] = ""
+        update["customer_name"] = ""
+    if inp.booking_date:
+        update["booking_date"] = inp.booking_date
+    if inp.agreement_date:
+        update["agreement_date"] = inp.agreement_date
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.plots.update_one({"id": plot_id}, {"$set": update})
+    await _audit_log(user, "update_plot", "plot", plot_id, {"changes": update})
+    updated = await db.plots.find_one({"id": plot_id}, {"_id": 0})
+    return updated
+
+# ═══════════════════════════════════════════
+#  MODULE 2: MAP UPLOAD
+# ═══════════════════════════════════════════
+ALLOWED_MAP_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/svg+xml", "application/pdf"}
+MAX_MAP_SIZE = 10 * 1024 * 1024  # 10MB
+
+@api_router.post("/layouts/{layout_id}/maps")
+async def upload_map(layout_id: str, request: Request, file: UploadFile = File(...)):
+    user = await get_current_user(request)
+    layout = await db.layouts.find_one({"id": layout_id}, {"_id": 0})
+    if not layout:
+        raise HTTPException(status_code=404, detail="Layout not found")
+    if file.content_type not in ALLOWED_MAP_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDF, JPG, PNG, SVG allowed.")
+    data = await file.read()
+    if len(data) > MAX_MAP_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
+    ext = file.filename.split(".")[-1] if "." in file.filename else "png"
+    storage_path = f"{APP_NAME}/maps/{layout_id}/{uuid.uuid4()}.{ext}"
+    result = put_object(storage_path, data, file.content_type or "application/octet-stream")
+    doc = {
+        "id": str(uuid.uuid4()), "layout_id": layout_id,
+        "file_name": file.filename, "storage_path": result["path"],
+        "file_type": file.content_type, "file_size": len(data),
+        "upload_date": datetime.now(timezone.utc).isoformat(),
+        "uploader_name": user.get("name", "Admin"),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.layout_maps.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.get("/layouts/{layout_id}/maps")
+async def list_maps(layout_id: str, request: Request):
+    await get_current_user(request)
+    maps = await db.layout_maps.find({"layout_id": layout_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return maps
+
+@api_router.get("/layout-maps/{map_id}/download")
+async def download_map(map_id: str, request: Request):
+    await get_current_user(request)
+    map_doc = await db.layout_maps.find_one({"id": map_id}, {"_id": 0})
+    if not map_doc:
+        raise HTTPException(status_code=404, detail="Map not found")
+    data, ct = get_object(map_doc["storage_path"])
+    return Response(content=data, media_type=ct, headers={
+        "Content-Disposition": f"attachment; filename={map_doc['file_name']}"
+    })
+
+@api_router.delete("/layout-maps/{map_id}")
+async def delete_map(map_id: str, request: Request):
+    user = await require_role("admin")(request)
+    await db.layout_maps.delete_one({"id": map_id})
+    return {"message": "Map deleted"}
+
+# ═══════════════════════════════════════════
+#  MODULE 5: PLOT PAYMENTS & CASH FLOW
+# ═══════════════════════════════════════════
+@api_router.post("/plot-payments")
+async def create_plot_payment(inp: PlotPaymentInput, request: Request):
+    user = await get_current_user(request)
+    if inp.amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than 0")
+    try:
+        pay_date = datetime.fromisoformat(inp.payment_date.replace("Z", "+00:00")) if "T" in inp.payment_date else datetime.strptime(inp.payment_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except Exception:
+        pay_date = datetime.now(timezone.utc)
+    if pay_date > datetime.now(timezone.utc) + timedelta(hours=24):
+        raise HTTPException(status_code=400, detail="Payment date cannot be a future date")
+    if inp.payment_mode == "cheque" and not inp.cheque_number:
+        raise HTTPException(status_code=400, detail="Cheque number is required for cheque payments")
+    plot = await db.plots.find_one({"id": inp.plot_id}, {"_id": 0})
+    if not plot:
+        raise HTTPException(status_code=404, detail="Plot not found")
+    existing_payments = await db.plot_payments.find({"plot_id": inp.plot_id, "is_deleted": False}, {"_id": 0}).to_list(1000)
+    total_paid = sum(p.get("amount", 0) for p in existing_payments)
+    remaining = plot.get("total_price", 0) - total_paid
+    if inp.amount > remaining + 0.01:
+        raise HTTPException(status_code=400, detail=f"Amount exceeds due balance. Remaining: Rs.{remaining:,.0f}")
+    doc = {
+        "id": str(uuid.uuid4()), "plot_id": inp.plot_id,
+        "customer_id": plot.get("customer_id", ""),
+        "amount": inp.amount, "payment_date": inp.payment_date,
+        "payment_mode": inp.payment_mode, "cheque_number": inp.cheque_number,
+        "reference_number": inp.reference_number, "notes": inp.notes,
+        "is_deleted": False, "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.plot_payments.insert_one(doc)
+    new_total = total_paid + inp.amount
+    if new_total >= plot.get("total_price", 0):
+        await db.plots.update_one({"id": inp.plot_id}, {"$set": {"status": "sold"}})
+    doc.pop("_id", None)
+    return doc
+
+@api_router.get("/plot-payments")
+async def list_plot_payments(request: Request, plot_id: str = "", start_date: str = "", end_date: str = ""):
+    await get_current_user(request)
+    query = {"is_deleted": False}
+    if plot_id:
+        query["plot_id"] = plot_id
+    if start_date:
+        query["payment_date"] = {"$gte": start_date}
+    if end_date:
+        query.setdefault("payment_date", {})
+        if isinstance(query["payment_date"], dict):
+            query["payment_date"]["$lte"] = end_date
+        else:
+            query["payment_date"] = {"$gte": query["payment_date"], "$lte": end_date}
+    payments = await db.plot_payments.find(query, {"_id": 0}).sort("payment_date", -1).to_list(5000)
+    return payments
+
+@api_router.delete("/plot-payments/{payment_id}")
+async def delete_plot_payment(payment_id: str, request: Request):
+    user = await require_role("admin")(request)
+    payment = await db.plot_payments.find_one({"id": payment_id}, {"_id": 0})
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    await db.plot_payments.update_one({"id": payment_id}, {"$set": {
+        "is_deleted": True, "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "deleted_by": user["id"]
+    }})
+    await _audit_log(user, "delete_plot_payment", "plot_payment", payment_id, payment)
+    plot = await db.plots.find_one({"id": payment["plot_id"]}, {"_id": 0})
+    if plot:
+        remaining_payments = await db.plot_payments.find({"plot_id": payment["plot_id"], "is_deleted": False}, {"_id": 0}).to_list(1000)
+        total = sum(p.get("amount", 0) for p in remaining_payments)
+        if total < plot.get("total_price", 0) and plot.get("status") == "sold":
+            await db.plots.update_one({"id": payment["plot_id"]}, {"$set": {"status": "reserved"}})
+    return {"message": "Payment deleted and moved to audit log"}
+
+# ═══════════════════════════════════════════
+#  MODULE 3: PLOT-WISE STATEMENT
+# ═══════════════════════════════════════════
+@api_router.get("/plot-statements/{plot_id}")
+async def get_plot_statement(plot_id: str, request: Request, start_date: str = "", end_date: str = ""):
+    await get_current_user(request)
+    plot = await db.plots.find_one({"id": plot_id}, {"_id": 0})
+    if not plot:
+        raise HTTPException(status_code=404, detail="Plot not found")
+    if not plot.get("customer_id"):
+        raise HTTPException(status_code=400, detail="No customer assigned to this plot")
+    query = {"plot_id": plot_id, "is_deleted": False}
+    if start_date:
+        query["payment_date"] = {"$gte": start_date}
+    if end_date:
+        query.setdefault("payment_date", {})
+        if isinstance(query["payment_date"], dict):
+            query["payment_date"]["$lte"] = end_date
+        else:
+            query["payment_date"] = {"$gte": query["payment_date"], "$lte": end_date}
+    payments = await db.plot_payments.find(query, {"_id": 0}).sort("payment_date", 1).to_list(1000)
+    total_paid = sum(p.get("amount", 0) for p in payments)
+    all_payments = await db.plot_payments.find({"plot_id": plot_id, "is_deleted": False}, {"_id": 0}).to_list(1000)
+    grand_total_paid = sum(p.get("amount", 0) for p in all_payments)
+    remaining = max(0, plot.get("total_price", 0) - grand_total_paid)
+    mode_breakdown = {}
+    for p in payments:
+        m = p.get("payment_mode", "other")
+        mode_breakdown[m] = mode_breakdown.get(m, 0) + p.get("amount", 0)
+    customer = None
+    if plot.get("customer_id"):
+        customer = await db.customers.find_one({"id": plot["customer_id"]}, {"_id": 0})
+    return {
+        "plot": plot, "customer": customer, "payments": payments,
+        "total_paid_in_period": total_paid, "grand_total_paid": grand_total_paid,
+        "remaining_balance": remaining, "mode_breakdown": mode_breakdown
+    }
+
+@api_router.get("/plot-statements/{plot_id}/pdf")
+async def plot_statement_pdf(plot_id: str, request: Request, start_date: str = "", end_date: str = ""):
+    await get_current_user(request)
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table as RLTable, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+
+    plot = await db.plots.find_one({"id": plot_id}, {"_id": 0})
+    if not plot:
+        raise HTTPException(status_code=404, detail="Plot not found")
+    brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0}) or {}
+    query = {"plot_id": plot_id, "is_deleted": False}
+    if start_date:
+        query["payment_date"] = {"$gte": start_date}
+    if end_date:
+        query.setdefault("payment_date", {})
+        if isinstance(query["payment_date"], dict):
+            query["payment_date"]["$lte"] = end_date
+        else:
+            query["payment_date"] = {"$gte": query["payment_date"], "$lte": end_date}
+    payments = await db.plot_payments.find(query, {"_id": 0}).sort("payment_date", 1).to_list(1000)
+    all_payments = await db.plot_payments.find({"plot_id": plot_id, "is_deleted": False}, {"_id": 0}).to_list(1000)
+    grand_total = sum(p.get("amount", 0) for p in all_payments)
+    period_total = sum(p.get("amount", 0) for p in payments)
+    remaining = max(0, plot.get("total_price", 0) - grand_total)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    elements = []
+    elements.append(Paragraph(f"<b>{brand.get('brand_name', 'RealtyPay')}</b>", styles["Title"]))
+    elements.append(Paragraph(f"Plot Statement - {plot['plot_number']}", styles["Heading2"]))
+    elements.append(Spacer(1, 8))
+    info = f"Plot: {plot['plot_number']} | Type: {plot.get('plot_type', '')} | Area: {plot.get('area', 0)} sq.ft | Total Price: Rs.{plot.get('total_price', 0):,.0f}"
+    elements.append(Paragraph(info, styles["Normal"]))
+    if plot.get("customer_name"):
+        elements.append(Paragraph(f"Customer: {plot['customer_name']}", styles["Normal"]))
+    dr = ""
+    if start_date:
+        dr += f"From: {start_date} "
+    if end_date:
+        dr += f"To: {end_date}"
+    if dr:
+        elements.append(Paragraph(f"Period: {dr}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+    data = [["Date", "Amount", "Mode", "Reference", "Notes"]]
+    for p in payments:
+        data.append([p.get("payment_date", ""), f"Rs.{p.get('amount', 0):,.0f}", p.get("payment_mode", ""), p.get("reference_number", "") or p.get("cheque_number", ""), p.get("notes", "")])
+    data.append(["", f"Total: Rs.{period_total:,.0f}", "", "", ""])
+    t = RLTable(data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052CC")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#F0F0F0")),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 16))
+    elements.append(Paragraph(f"<b>Grand Total Paid: Rs.{grand_total:,.0f}</b>", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Remaining Balance: Rs.{remaining:,.0f}</b>", styles["Normal"]))
+    elements.append(Spacer(1, 24))
+    elements.append(Paragraph("_________________________", styles["Normal"]))
+    elements.append(Paragraph("Authorized Signature", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+    if brand.get("footer_text"):
+        elements.append(Paragraph(f"<i>{brand['footer_text']}</i>", styles["Normal"]))
+    doc.build(elements)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=statement_{plot['plot_number']}.pdf"
+    })
+
+# ═══════════════════════════════════════════
+#  MODULE 5: CASH FLOW DASHBOARD
+# ═══════════════════════════════════════════
+@api_router.get("/cashflow/stats")
+async def cashflow_stats(request: Request):
+    await get_current_user(request)
+    total_plots = await db.plots.count_documents({})
+    sold_plots = await db.plots.count_documents({"status": "sold"})
+    available_plots = await db.plots.count_documents({"status": "available"})
+    reserved_plots = await db.plots.count_documents({"status": "reserved"})
+    all_sold = await db.plots.find({"status": {"$in": ["sold", "reserved"]}}, {"_id": 0}).to_list(5000)
+    total_value = sum(p.get("total_price", 0) for p in all_sold)
+    all_payments = await db.plot_payments.find({"is_deleted": False}, {"_id": 0}).to_list(10000)
+    total_collected = sum(p.get("amount", 0) for p in all_payments)
+    total_outstanding = total_value - total_collected
+    # Fully paid vs pending customers
+    plot_paid = {}
+    for p in all_payments:
+        plot_paid[p["plot_id"]] = plot_paid.get(p["plot_id"], 0) + p.get("amount", 0)
+    fully_paid = 0
+    pending_balance = 0
+    for s in all_sold:
+        tp = plot_paid.get(s["id"], 0)
+        if tp >= s.get("total_price", 0):
+            fully_paid += 1
+        else:
+            pending_balance += 1
+    # Payment mode breakdown
+    mode_breakdown = {}
+    for p in all_payments:
+        m = p.get("payment_mode", "other")
+        mode_breakdown[m] = mode_breakdown.get(m, 0) + p.get("amount", 0)
+    # Monthly collection trend
+    trend = []
+    now = datetime.now(timezone.utc)
+    for i in range(11, -1, -1):
+        m_date = now - timedelta(days=30 * i)
+        m, y = m_date.month, m_date.year
+        start = f"{y}-{m:02d}-01"
+        if m == 12:
+            end = f"{y+1}-01-01"
+        else:
+            end = f"{y}-{m+1:02d}-01"
+        month_payments = [p for p in all_payments if start <= p.get("payment_date", "") < end]
+        collected = sum(p.get("amount", 0) for p in month_payments)
+        trend.append({"month": m, "year": y, "collected": collected, "label": f"{datetime(y, m, 1).strftime('%b %Y')}"})
+    return {
+        "total_plots": total_plots, "sold_plots": sold_plots,
+        "available_plots": available_plots, "reserved_plots": reserved_plots,
+        "total_value": total_value, "total_collected": total_collected,
+        "total_outstanding": max(0, total_outstanding),
+        "fully_paid_customers": fully_paid, "pending_balance_customers": pending_balance,
+        "mode_breakdown": mode_breakdown, "trend": trend
+    }
+
+@api_router.get("/cashflow/statement")
+async def cashflow_statement(request: Request, period: str = "monthly", start_date: str = "", end_date: str = ""):
+    await get_current_user(request)
+    now = datetime.now(timezone.utc)
+    if not start_date:
+        if period == "monthly":
+            start_date = f"{now.year}-{now.month:02d}-01"
+        elif period == "half_yearly":
+            sm = now.month - 5 if now.month > 5 else 1
+            start_date = f"{now.year}-{sm:02d}-01"
+        elif period == "yearly":
+            start_date = f"{now.year}-01-01"
+        else:
+            start_date = f"{now.year}-{now.month:02d}-01"
+    if not end_date:
+        end_date = now.strftime("%Y-%m-%d")
+    query = {"is_deleted": False, "payment_date": {"$gte": start_date, "$lte": end_date}}
+    payments = await db.plot_payments.find(query, {"_id": 0}).sort("payment_date", 1).to_list(10000)
+    # Group by plot
+    plot_ids = list(set(p["plot_id"] for p in payments))
+    plots_data = await db.plots.find({"id": {"$in": plot_ids}}, {"_id": 0}).to_list(len(plot_ids)) if plot_ids else []
+    plots_map = {p["id"]: p for p in plots_data}
+    by_plot = {}
+    for p in payments:
+        pid = p["plot_id"]
+        if pid not in by_plot:
+            plot = plots_map.get(pid, {})
+            by_plot[pid] = {
+                "plot_number": plot.get("plot_number", "?"),
+                "customer_name": plot.get("customer_name", ""),
+                "total_price": plot.get("total_price", 0),
+                "payments": [], "period_total": 0
+            }
+        by_plot[pid]["payments"].append(p)
+        by_plot[pid]["period_total"] += p.get("amount", 0)
+    return {"period": period, "start_date": start_date, "end_date": end_date, "plots": list(by_plot.values()), "total": sum(p.get("amount", 0) for p in payments)}
+
+# ═══════════════════════════════════════════
+#  AUDIT LOG
+# ═══════════════════════════════════════════
+async def _audit_log(user, action, entity_type, entity_id, details):
+    doc = {
+        "id": str(uuid.uuid4()), "action": action,
+        "entity_type": entity_type, "entity_id": entity_id,
+        "details": details, "user_id": user.get("id", ""),
+        "user_name": user.get("name", ""), "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.audit_log.insert_one(doc)
+
+@api_router.get("/audit-log")
+async def get_audit_log(request: Request, limit: int = 100):
+    user = await require_role("admin")(request)
+    logs = await db.audit_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return logs
 
 # ─── HEALTH CHECK ───
 @api_router.get("/")

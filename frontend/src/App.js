@@ -11,6 +11,9 @@ import PaymentTrackerPage from "@/pages/PaymentTrackerPage";
 import WhatsAppPage from "@/pages/WhatsAppPage";
 import BrandSettingsPage from "@/pages/BrandSettingsPage";
 import ReportsPage from "@/pages/ReportsPage";
+import LayoutsPage from "@/pages/LayoutsPage";
+import LayoutDetailPage from "@/pages/LayoutDetailPage";
+import CashFlowPage from "@/pages/CashFlowPage";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -39,6 +42,9 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<DashboardPage />} />
+        <Route path="layouts" element={<LayoutsPage />} />
+        <Route path="layouts/:id" element={<LayoutDetailPage />} />
+        <Route path="cashflow" element={<CashFlowPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerProfilePage />} />
         <Route path="payments" element={<PaymentTrackerPage />} />
