@@ -75,7 +75,7 @@ export default function LoginPage() {
                   <Input data-testid="login-password" id="login-password" type="password" placeholder="Enter password" value={loginForm.password} onChange={e => setLoginForm(p => ({...p, password: e.target.value}))} required className="mt-1.5" />
                 </div>
                 {error && <p data-testid="auth-error" className="text-sm text-red-600 bg-red-50 p-2.5 rounded-lg">{error}</p>}
-                <Button data-testid="login-submit-btn" type="submit" className="w-full" disabled={loading} style={{ backgroundColor: '#0052CC' }}>
+                <Button data-testid="login-submit-btn" type="submit" className="w-full" disabled={loading} style={{ backgroundColor: '#00AFD1' }}>
                   {loading ? 'Signing in...' : 'Sign In'}
                 </Button>
               </form>
@@ -96,7 +96,7 @@ export default function LoginPage() {
                   <Input data-testid="register-password" id="reg-password" type="password" placeholder="Min 6 characters" value={regForm.password} onChange={e => setRegForm(p => ({...p, password: e.target.value}))} required className="mt-1.5" />
                 </div>
                 {error && <p data-testid="auth-error" className="text-sm text-red-600 bg-red-50 p-2.5 rounded-lg">{error}</p>}
-                <Button data-testid="register-submit-btn" type="submit" className="w-full" disabled={loading} style={{ backgroundColor: '#0052CC' }}>
+                <Button data-testid="register-submit-btn" type="submit" className="w-full" disabled={loading} style={{ backgroundColor: '#00AFD1' }}>
                   {loading ? 'Creating account...' : 'Create Account'}
                 </Button>
               </form>

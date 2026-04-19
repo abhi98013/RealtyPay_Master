@@ -8,8 +8,8 @@ import { toast } from 'sonner';
 
 export default function BrandSettingsPage() {
   const [brand, setBrand] = useState({
-    brand_name: '', tagline: '', primary_color: '#0052CC',
-    accent_color: '#10B981', footer_text: '', penalty_rate: 1, phone: ''
+    brand_name: '', tagline: '', primary_color: '#00AFD1',
+    accent_color: '#2D2D2D', footer_text: '', penalty_rate: 1, phone: ''
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -29,8 +29,8 @@ export default function BrandSettingsPage() {
     try {
       const res = await api.put('/brand', brand);
       setBrand(res.data);
-      document.documentElement.style.setProperty('--brand-primary', res.data.primary_color || '#0052CC');
-      document.documentElement.style.setProperty('--brand-accent', res.data.accent_color || '#10B981');
+      document.documentElement.style.setProperty('--brand-primary', res.data.primary_color || '#00AFD1');
+      document.documentElement.style.setProperty('--brand-accent', res.data.accent_color || '#2D2D2D');
       toast.success('Brand settings saved');
     } catch {
       toast.error('Failed to save');

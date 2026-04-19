@@ -161,7 +161,7 @@ class PaymentInput(BaseModel):
 class BrandInput(BaseModel):
     brand_name: str = ""
     tagline: str = ""
-    primary_color: str = "#0052CC"
+    primary_color: str = "#00AFD1"
     accent_color: str = "#10B981"
     footer_text: str = ""
     penalty_rate: float = 1.0
@@ -209,7 +209,7 @@ async def startup():
     if not brand:
         await db.brand_settings.insert_one({
             "id": "default", "brand_name": "KrushnaKunj Association", "tagline": "The key to our success...",
-            "primary_color": "#0052CC", "accent_color": "#10B981",
+            "primary_color": "#00AFD1", "accent_color": "#2D2D2D",
             "footer_text": "KrushnaKunj Association - The key to our success...",
             "penalty_rate": 1.0, "phone": "", "logo_path": "",
             "updated_at": datetime.now(timezone.utc).isoformat()
@@ -282,7 +282,7 @@ async def logout(response: Response):
 @api_router.get("/brand")
 async def get_brand():
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0})
-    return brand or {"id": "default", "brand_name": "KrushnaKunj Association", "primary_color": "#0052CC", "accent_color": "#10B981"}
+    return brand or {"id": "default", "brand_name": "KrushnaKunj Association", "primary_color": "#00AFD1", "accent_color": "#2D2D2D"}
 
 @api_router.put("/brand")
 async def update_brand(inp: BrandInput, request: Request):
@@ -910,7 +910,7 @@ async def monthly_report_pdf(request: Request, month: int = 0, year: int = 0):
 
     t = RLTable(data, repeatRows=1)
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052CC")),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#00AFD1")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -974,7 +974,7 @@ async def annual_statement_pdf(customer_id: str, request: Request, year: int = 0
 
     t = RLTable(data, repeatRows=1)
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052CC")),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#00AFD1")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTSIZE', (0, 0), (-1, -1), 9),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -1388,7 +1388,7 @@ async def plot_statement_pdf(plot_id: str, request: Request, start_date: str = "
     data.append(["", f"Total: Rs.{period_total:,.0f}", "", "", ""])
     t = RLTable(data, repeatRows=1)
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0052CC")),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#00AFD1")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),

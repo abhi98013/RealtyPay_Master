@@ -26,7 +26,7 @@ export default function DashboardPage() {
   }
 
   const statCards = [
-    { label: 'Total Collected', value: `Rs.${(stats.total_collected || 0).toLocaleString()}`, sub: `Target: Rs.${(stats.total_target || 0).toLocaleString()}`, icon: IndianRupee, color: '#0052CC' },
+    { label: 'Total Collected', value: `Rs.${(stats.total_collected || 0).toLocaleString()}`, sub: `Target: Rs.${(stats.total_target || 0).toLocaleString()}`, icon: IndianRupee, color: '#00AFD1' },
     { label: 'Paid Customers', value: stats.paid_count, sub: `of ${stats.total_customers} total`, icon: CheckCircle2, color: '#10B981' },
     { label: 'Overdue', value: stats.overdue_count, sub: `Rs.${(stats.total_outstanding || 0).toLocaleString()} outstanding`, icon: AlertTriangle, color: '#EF4444' },
     { label: 'Pending', value: stats.pending_count + stats.partial_count, sub: `${stats.partial_count} partial`, icon: Clock, color: '#F59E0B' },
@@ -84,15 +84,15 @@ export default function DashboardPage() {
               <AreaChart data={stats.trend || []}>
                 <defs>
                   <linearGradient id="colorCol" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0052CC" stopOpacity={0.15}/>
-                    <stop offset="95%" stopColor="#0052CC" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#00AFD1" stopOpacity={0.15}/>
+                    <stop offset="95%" stopColor="#00AFD1" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E5E5" />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
                 <YAxis tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip contentStyle={{ fontFamily: 'IBM Plex Sans', fontSize: 12 }} formatter={(v) => [`Rs.${v.toLocaleString()}`, '']} />
-                <Area type="monotone" dataKey="collected" stroke="#0052CC" fill="url(#colorCol)" strokeWidth={2} />
+                <Area type="monotone" dataKey="collected" stroke="#00AFD1" fill="url(#colorCol)" strokeWidth={2} />
                 <Area type="monotone" dataKey="target" stroke="#E5E5E5" fill="none" strokeWidth={1} strokeDasharray="4 4" />
               </AreaChart>
             </ResponsiveContainer>

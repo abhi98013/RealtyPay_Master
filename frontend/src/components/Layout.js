@@ -24,13 +24,13 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [brand, setBrand] = useState({ brand_name: 'RealtyPay', primary_color: '#0052CC' });
+  const [brand, setBrand] = useState({ brand_name: 'KrushnaKunj Association', primary_color: '#00AFD1' });
 
   useEffect(() => {
     api.get('/brand').then(r => {
       setBrand(r.data);
-      document.documentElement.style.setProperty('--brand-primary', r.data.primary_color || '#0052CC');
-      document.documentElement.style.setProperty('--brand-accent', r.data.accent_color || '#10B981');
+      document.documentElement.style.setProperty('--brand-primary', r.data.primary_color || '#00AFD1');
+      document.documentElement.style.setProperty('--brand-accent', r.data.accent_color || '#2D2D2D');
     }).catch(() => {});
   }, []);
 

@@ -9,7 +9,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Wallet, TrendingUp, CheckCircle2, AlertTriangle, Download, IndianRupee, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const PIE_COLORS = ['#0052CC', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+const PIE_COLORS = ['#00AFD1', '#2D2D2D', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 export default function CashFlowPage() {
   const [stats, setStats] = useState(null);
@@ -37,7 +37,7 @@ export default function CashFlowPage() {
   }
 
   const statCards = [
-    { label: 'Total Revenue', value: `Rs.${(stats.total_collected || 0).toLocaleString()}`, sub: `of Rs.${(stats.total_value || 0).toLocaleString()} total`, icon: Wallet, color: '#0052CC' },
+    { label: 'Total Revenue', value: `Rs.${(stats.total_collected || 0).toLocaleString()}`, sub: `of Rs.${(stats.total_value || 0).toLocaleString()} total`, icon: Wallet, color: '#00AFD1' },
     { label: 'Outstanding', value: `Rs.${(stats.total_outstanding || 0).toLocaleString()}`, sub: `${stats.pending_balance_customers} customers`, icon: AlertTriangle, color: '#EF4444' },
     { label: 'Plots Sold', value: `${stats.sold_plots}/${stats.total_plots}`, sub: `${stats.available_plots} available · ${stats.reserved_plots} reserved`, icon: TrendingUp, color: '#10B981' },
     { label: 'Fully Paid', value: stats.fully_paid_customers, sub: `${stats.pending_balance_customers} with balance`, icon: CheckCircle2, color: '#F59E0B' },
@@ -77,14 +77,14 @@ export default function CashFlowPage() {
               <AreaChart data={stats.trend || []}>
                 <defs>
                   <linearGradient id="colorCF" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0052CC" stopOpacity={0.15}/><stop offset="95%" stopColor="#0052CC" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#00AFD1" stopOpacity={0.15}/><stop offset="95%" stopColor="#00AFD1" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E5E5" />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
                 <YAxis tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickFormatter={v => `${(v/1000).toFixed(0)}k`} />
                 <Tooltip contentStyle={{ fontFamily: 'IBM Plex Sans', fontSize: 12 }} formatter={v => [`Rs.${v.toLocaleString()}`, '']} />
-                <Area type="monotone" dataKey="collected" stroke="#0052CC" fill="url(#colorCF)" strokeWidth={2} />
+                <Area type="monotone" dataKey="collected" stroke="#00AFD1" fill="url(#colorCF)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
