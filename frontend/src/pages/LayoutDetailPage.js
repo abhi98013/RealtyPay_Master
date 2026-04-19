@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowLeft, PlusCircle, Upload, Download, ZoomIn, ZoomOut,
-  Trash2, FileText, IndianRupee, MapPin, Edit
+  Trash2, FileText, IndianRupee, MapPin, Edit, Eye, X, Maximize2, Minimize2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -69,6 +69,8 @@ export default function LayoutDetailPage() {
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [mapZoom, setMapZoom] = useState(1);
   const [uploading, setUploading] = useState(false);
+  const [viewingMap, setViewingMap] = useState(null);
+  const [viewerZoom, setViewerZoom] = useState(1);
   const [customers, setCustomers] = useState([]);
   // Payment form
   const [payForm, setPayForm] = useState({ amount: '', payment_date: '', payment_mode: 'upi', cheque_number: '', reference_number: '', notes: '' });
@@ -198,6 +200,21 @@ export default function LayoutDetailPage() {
     } catch { toast.error('Download failed'); }
   };
 
+  const openMapViewer = async (map) => {
+    try {
+      const r = await api.get(`/layout-maps/${map.id}/download`, { responseType: 'blob' });
+      const blobUrl = window.URL.createObjectURL(r.data);
+      setViewingMap({ ...map, blobUrl });
+      setViewerZoom(1);
+    } catch { toast.error('Failed to load map'); }
+  };
+
+  const closeMapViewer = () => {
+    if (viewingMap?.blobUrl) window.URL.revokeObjectURL(viewingMap.blobUrl);
+    setViewingMap(null);
+    setViewerZoom(1);
+  };
+
   const downloadStatement = async () => {
     if (!selectedPlot) return;
     try {
@@ -284,23 +301,44 @@ export default function LayoutDetailPage() {
             ) : maps.map(m => (
               <div key={m.id} className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
                 <div className="flex items-center justify-between p-3 border-b border-neutral-100">
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900">{m.file_name}</p>
-                    <p className="text-[10px] text-neutral-400">{m.uploader_name} · {new Date(m.upload_date).toLocaleDateString()} · {(m.file_size / 1024).toFixed(0)}KB</p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-neutral-100 flex items-center justify-center shrink-0">
+                      {m.file_type === 'application/pdf' ? <FileText className="w-4 h-4 text-rose-500" /> : <MapPin className="w-4 h-4 text-cyan-600" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-neutral-900 truncate">{m.file_name}</p>
+                      <p className="text-[10px] text-neutral-400">{m.uploader_name} · {new Date(m.upload_date).toLocaleDateString()} · {(m.file_size / 1024).toFixed(0)} KB</p>
+                    </div>
                   </div>
-                  <div className="flex gap-1.5">
-                    <Button variant="ghost" size="icon" onClick={() => setMapZoom(z => Math.min(z + 0.25, 3))} data-testid={`zoom-in-${m.id}`}><ZoomIn className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => setMapZoom(z => Math.max(z - 0.25, 0.5))} data-testid={`zoom-out-${m.id}`}><ZoomOut className="w-4 h-4" /></Button>
+                  <div className="flex gap-1.5 shrink-0">
+                    <Button data-testid={`view-map-${m.id}`} variant="outline" size="sm" className="gap-1.5" onClick={() => openMapViewer(m)}>
+                      <Eye className="w-3.5 h-3.5" /> View
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => downloadMap(m)} data-testid={`download-map-${m.id}`}><Download className="w-4 h-4" /></Button>
                   </div>
                 </div>
+                {/* Inline thumbnail preview for images */}
                 {m.file_type?.startsWith('image') && (
-                  <div className="overflow-auto p-4 bg-neutral-50" style={{ maxHeight: '500px' }}>
-                    <img src={`${API_URL}/api/layout-maps/${m.id}/download`} alt={m.file_name} style={{ transform: `scale(${mapZoom})`, transformOrigin: 'top left', transition: 'transform 0.2s' }} className="max-w-full" />
+                  <div
+                    className="p-3 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors"
+                    onClick={() => openMapViewer(m)}
+                  >
+                    <img
+                      src={`${API_URL}/api/layout-maps/${m.id}/download`}
+                      alt={m.file_name}
+                      className="max-h-48 rounded-lg border border-neutral-200 object-contain mx-auto"
+                    />
+                    <p className="text-[10px] text-center text-neutral-400 mt-2">Click to view full size</p>
                   </div>
                 )}
                 {m.file_type === 'application/pdf' && (
-                  <div className="p-4 text-center text-sm text-neutral-500">PDF file — <button className="underline" style={{ color: 'var(--brand-primary)' }} onClick={() => downloadMap(m)}>Download to view</button></div>
+                  <div className="p-4 bg-neutral-50 flex items-center justify-center gap-3">
+                    <FileText className="w-6 h-6 text-rose-400" />
+                    <div>
+                      <p className="text-sm text-neutral-600">PDF Document</p>
+                      <p className="text-[10px] text-neutral-400">Click "View" to open in viewer or download</p>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}
@@ -517,6 +555,68 @@ export default function LayoutDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Full-Screen Map Viewer ── */}
+      {viewingMap && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col" data-testid="map-viewer-overlay">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-4 py-3 bg-black/60 backdrop-blur-sm border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <MapPin className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white truncate">{viewingMap.file_name}</p>
+                <p className="text-[10px] text-neutral-400">{viewingMap.uploader_name} · {new Date(viewingMap.upload_date).toLocaleDateString()} · {(viewingMap.file_size / 1024).toFixed(0)} KB</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button data-testid="viewer-zoom-out" variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setViewerZoom(z => Math.max(z - 0.25, 0.25))}>
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <span className="text-xs font-mono text-neutral-300 w-12 text-center">{Math.round(viewerZoom * 100)}%</span>
+              <Button data-testid="viewer-zoom-in" variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setViewerZoom(z => Math.min(z + 0.25, 5))}>
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button data-testid="viewer-reset-zoom" variant="ghost" size="sm" className="text-white hover:bg-white/10 text-xs ml-1" onClick={() => setViewerZoom(1)}>
+                Reset
+              </Button>
+              <div className="w-px h-6 bg-white/20 mx-2" />
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => downloadMap(viewingMap)}>
+                <Download className="w-4 h-4" />
+              </Button>
+              <Button data-testid="viewer-close" variant="ghost" size="icon" className="text-white hover:bg-red-500/80" onClick={closeMapViewer}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Map Content */}
+          <div className="flex-1 overflow-auto flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) closeMapViewer(); }}>
+            {viewingMap.file_type?.startsWith('image') && (
+              <img
+                src={viewingMap.blobUrl}
+                alt={viewingMap.file_name}
+                data-testid="map-viewer-image"
+                className="max-w-none select-none"
+                style={{
+                  transform: `scale(${viewerZoom})`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.2s ease-out',
+                }}
+                draggable={false}
+              />
+            )}
+            {viewingMap.file_type === 'application/pdf' && (
+              <iframe
+                src={viewingMap.blobUrl}
+                title={viewingMap.file_name}
+                data-testid="map-viewer-pdf"
+                className="w-full h-full rounded-lg border border-white/10"
+                style={{ minHeight: '80vh' }}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
