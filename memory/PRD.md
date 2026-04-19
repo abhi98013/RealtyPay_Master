@@ -25,27 +25,25 @@ Build a fully functional Real Estate Payment Management & Communication Web App 
 - PDF export for monthly reports and annual statements
 - Penalty calculation (configurable % per day)
 
-## What's Been Implemented (March 30, 2026)
-### Backend
-- JWT authentication with admin seeding
-- Customer CRUD with auto-generated payment slots
+## What's Been Implemented (April 19, 2026)
+### Phase 1 (March 30, 2026) - Core MVP
+- JWT authentication with admin seeding (Admin/Agent/Viewer roles)
+- Customer CRUD with auto-generated EMI payment slots
 - Payment management (full/partial/waived/overdue detection)
-- Payment matrix API
-- Dashboard statistics API
-- Brand settings CRUD + logo upload (Emergent Object Storage)
-- WhatsApp mock messaging (6 template types, bulk send)
+- Payment tracker matrix (month×customer)
+- Dashboard with stats, charts, quick actions
+- Brand settings + logo upload (Emergent Object Storage)
+- WhatsApp mock messaging (6 templates, bulk send)
 - PDF report generation (monthly + annual statement)
 
-### Frontend
-- Login/Register page with tabs
-- Dashboard with 4 stat cards, area chart, top overdue list, quick actions
-- Customers list with search + add customer dialog
-- Customer profile with payment history + WhatsApp message logs tabs
-- Payment tracker matrix (year-based, click cell to record payment via Sheet)
-- WhatsApp Center (bulk select, message type, send, message log)
-- Brand Settings (name, tagline, colors, logo upload, live preview)
-- Reports page (monthly PDF download)
-- Responsive sidebar layout
+### Phase 2 (April 19, 2026) - Plot Management & SMS
+- **Module 1**: Interactive Plot Layout Management - layouts CRUD, plots with dimensions/pricing/type, visual canvas with colored tiles (green=available, red=sold, amber=reserved), hover tooltips, plot detail sheet
+- **Module 2**: Map Upload - PDF/Image upload per layout, zoom in/out, download, file type & size validation
+- **Module 3**: Plot-wise Statement - detailed per-plot statement with customer info, payment history, PDF export with signature line
+- **Module 4**: SMS via Fast2SMS - individual send, bulk send, phone validation (10-digit Indian mobile), 160-char limit, message history, delivery status tracking
+- **Module 5**: Cash Flow Dashboard - revenue/outstanding/sold stats, monthly collection trend chart, payment mode pie chart, period statements (monthly/half-yearly/yearly/custom)
+- Audit log for critical actions (delete, status change, payment edit)
+- N+1 query optimizations for production performance
 
 ## Prioritized Backlog
 ### P0 (Critical - Done)
