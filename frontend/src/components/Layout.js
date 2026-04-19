@@ -50,14 +50,12 @@ export default function Layout() {
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-neutral-200 flex flex-col transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-5 border-b border-neutral-200">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: brand.primary_color || '#0052CC' }}>
-              {(brand.brand_name || 'R')[0]}
-            </div>
+            <img src="/logo.jpeg" alt="KrushnaKunj" className="w-9 h-9 rounded-lg object-contain" />
             <div>
               <h1 data-testid="brand-name-header" className="text-sm font-semibold text-neutral-900 tracking-tight" style={{ fontFamily: 'Outfit, sans-serif' }}>
-                {brand.brand_name || 'RealtyPay'}
+                {brand.brand_name || 'KrushnaKunj Association'}
               </h1>
-              <p className="text-[10px] uppercase tracking-widest text-neutral-400 font-medium">Payment Manager</p>
+              <p className="text-[10px] tracking-wider text-neutral-400 font-medium">The key to our success...</p>
             </div>
           </div>
         </div>

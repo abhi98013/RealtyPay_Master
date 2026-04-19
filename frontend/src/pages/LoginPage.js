@@ -51,12 +51,10 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-[#0052CC] flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-white" />
-            </div>
+            <img src="/logo.jpeg" alt="KrushnaKunj" className="w-12 h-12 rounded-xl object-contain" />
             <div>
-              <h1 data-testid="login-title" className="text-2xl font-semibold text-neutral-900" style={{ fontFamily: 'Outfit' }}>RealtyPay</h1>
-              <p className="text-xs text-neutral-400 tracking-wider uppercase">Payment Management</p>
+              <h1 data-testid="login-title" className="text-2xl font-semibold text-neutral-900" style={{ fontFamily: 'Outfit' }}>KrushnaKunj Association</h1>
+              <p className="text-xs text-neutral-400 tracking-wider">The key to our success...</p>
             </div>
           </div>
 
@@ -111,10 +109,8 @@ export default function LoginPage() {
       <div className="hidden lg:flex flex-1 items-center justify-center bg-neutral-950 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0)', backgroundSize: '40px 40px' }} />
         <div className="relative z-10 text-center p-12">
-          <div className="w-20 h-20 rounded-2xl bg-[#0052CC] mx-auto flex items-center justify-center mb-6">
-            <Building2 className="w-10 h-10 text-white" />
-          </div>
-          <h2 className="text-3xl font-semibold text-white mb-3" style={{ fontFamily: 'Outfit' }}>Smart Property Payments</h2>
+          <img src="/logo.jpeg" alt="KrushnaKunj" className="w-24 h-24 rounded-2xl mx-auto mb-6 object-contain bg-white p-2" />
+          <h2 className="text-3xl font-semibold text-white mb-3" style={{ fontFamily: 'Outfit' }}>KrushnaKunj Association</h2>
           <p className="text-neutral-400 text-sm max-w-sm mx-auto leading-relaxed">
             Track EMIs, manage customers, send WhatsApp reminders, and generate branded reports — all in one place.
           </p>

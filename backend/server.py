@@ -208,9 +208,9 @@ async def startup():
     brand = await db.brand_settings.find_one({"id": "default"})
     if not brand:
         await db.brand_settings.insert_one({
-            "id": "default", "brand_name": "RealtyPay", "tagline": "Smart Property Payment Management",
+            "id": "default", "brand_name": "KrushnaKunj Association", "tagline": "The key to our success...",
             "primary_color": "#0052CC", "accent_color": "#10B981",
-            "footer_text": "RealtyPay - Building Dreams Together",
+            "footer_text": "KrushnaKunj Association - The key to our success...",
             "penalty_rate": 1.0, "phone": "", "logo_path": "",
             "updated_at": datetime.now(timezone.utc).isoformat()
         })
@@ -282,7 +282,7 @@ async def logout(response: Response):
 @api_router.get("/brand")
 async def get_brand():
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0})
-    return brand or {"id": "default", "brand_name": "RealtyPay", "primary_color": "#0052CC", "accent_color": "#10B981"}
+    return brand or {"id": "default", "brand_name": "KrushnaKunj Association", "primary_color": "#0052CC", "accent_color": "#10B981"}
 
 @api_router.put("/brand")
 async def update_brand(inp: BrandInput, request: Request):
@@ -599,7 +599,7 @@ MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June", "July
 
 def generate_message(template: str, customer: dict, payment: dict = None, brand: dict = None):
     brand = brand or {}
-    brand_name = brand.get("brand_name", "RealtyPay")
+    brand_name = brand.get("brand_name", "KrushnaKunj Association")
     phone = brand.get("phone", "N/A")
     name = customer.get("name", "Customer")
     prop = customer.get("property_name", "Property")
@@ -754,7 +754,7 @@ def build_sms_text(template_key: str, customer: dict = None, brand: dict = None,
     tpl = SMS_TEMPLATES.get(template_key, SMS_TEMPLATES["custom"])
     name = customer.get("name", "Customer") if customer else "Customer"
     prop = customer.get("property_name", "") if customer else extra.get("property", "")
-    brand_name = brand.get("brand_name", "RealtyPay")
+    brand_name = brand.get("brand_name", "KrushnaKunj Association")
     return tpl.format(
         name=name, property=prop, brand=brand_name,
         amount=extra.get("amount", "0"), plot=extra.get("plot", ""),
@@ -876,7 +876,7 @@ async def monthly_report_pdf(request: Request, month: int = 0, year: int = 0):
         year = datetime.now(timezone.utc).year
 
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0}) or {}
-    brand_name = brand.get("brand_name", "RealtyPay")
+    brand_name = brand.get("brand_name", "KrushnaKunj Association")
     footer_text = brand.get("footer_text", "")
 
     payments = await db.payments.find({"month": month, "year": year}, {"_id": 0}).to_list(5000)
@@ -944,7 +944,7 @@ async def annual_statement_pdf(customer_id: str, request: Request, year: int = 0
         raise HTTPException(status_code=404, detail="Customer not found")
 
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0}) or {}
-    brand_name = brand.get("brand_name", "RealtyPay")
+    brand_name = brand.get("brand_name", "KrushnaKunj Association")
 
     payments = await db.payments.find({"customer_id": customer_id, "year": year}, {"_id": 0}).sort("month", 1).to_list(12)
 
@@ -1367,7 +1367,7 @@ async def plot_statement_pdf(plot_id: str, request: Request, start_date: str = "
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     elements = []
-    elements.append(Paragraph(f"<b>{brand.get('brand_name', 'RealtyPay')}</b>", styles["Title"]))
+    elements.append(Paragraph(f"<b>{brand.get('brand_name', 'KrushnaKunj Association')}</b>", styles["Title"]))
     elements.append(Paragraph(f"Plot Statement - {plot['plot_number']}", styles["Heading2"]))
     elements.append(Spacer(1, 8))
     info = f"Plot: {plot['plot_number']} | Type: {plot.get('plot_type', '')} | Area: {plot.get('area', 0)} sq.ft | Total Price: Rs.{plot.get('total_price', 0):,.0f}"
@@ -1525,6 +1525,6 @@ async def get_audit_log(request: Request, limit: int = 100):
 # ─── HEALTH CHECK ───
 @api_router.get("/")
 async def root():
-    return {"message": "RealtyPay API Running", "status": "ok"}
+    return {"message": "KrushnaKunj Association API Running", "status": "ok"}
 
 app.include_router(api_router)
