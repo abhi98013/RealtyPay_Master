@@ -672,6 +672,187 @@ async def get_messages(request: Request, customer_id: str = ""):
     return messages
 
 # ═══════════════════════════════════════════
+#  SMS VIA FAST2SMS
+# ═══════════════════════════════════════════
+import re
+
+FAST2SMS_URL = "https://www.fast2sms.com/dev/bulkV2"
+
+def validate_indian_phone(phone: str) -> str:
+    """Extract valid 10-digit Indian mobile number."""
+    digits = re.sub(r'\D', '', phone)
+    if digits.startswith('91') and len(digits) == 12:
+        digits = digits[2:]
+    if digits.startswith('0') and len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) != 10:
+        return ""
+    if digits[0] not in '6789':
+        return ""
+    return digits
+
+def _send_fast2sms(phone: str, message: str) -> dict:
+    """Send SMS via Fast2SMS API. Returns response dict."""
+    api_key = os.environ.get("FAST2SMS_API_KEY", "")
+    if not api_key:
+        return {"success": False, "error": "Fast2SMS API key not configured"}
+    clean_phone = validate_indian_phone(phone)
+    if not clean_phone:
+        return {"success": False, "error": f"Invalid mobile number: {phone}"}
+    if not message or not message.strip():
+        return {"success": False, "error": "Message cannot be empty"}
+    if len(message) > 160:
+        message = message[:160]
+    try:
+        headers = {
+            "authorization": api_key,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cache-Control": "no-cache"
+        }
+        payload = {
+            "route": "q",
+            "message": message,
+            "language": "english",
+            "flash": "0",
+            "numbers": clean_phone,
+        }
+        resp = requests.post(FAST2SMS_URL, data=payload, headers=headers, timeout=30)
+        result = resp.json()
+        logger.info(f"Fast2SMS response for {clean_phone}: {result}")
+        return {"success": result.get("return", False), "message": result.get("message", ""), "request_id": result.get("request_id", ""), "raw": result}
+    except Exception as e:
+        logger.error(f"Fast2SMS error: {e}")
+        return {"success": False, "error": str(e)}
+
+class SMSInput(BaseModel):
+    customer_id: str = ""
+    phone: str = ""
+    message: str
+    message_type: str = "custom"
+
+class BulkSMSInput(BaseModel):
+    customer_ids: List[str]
+    message_type: str = "payment_reminder"
+    custom_message: str = ""
+
+SMS_TEMPLATES = {
+    "payment_reminder": "Dear {name}, your payment for {property} is due. Please pay at the earliest. - {brand}",
+    "payment_received": "Dear {name}, we received your payment of Rs.{amount} for {property}. Thank you! - {brand}",
+    "booking_confirmation": "Dear {name}, your booking for Plot {plot} at {property} is confirmed. Total: Rs.{total}. - {brand}",
+    "custom": "{message}",
+}
+
+def build_sms_text(template_key: str, customer: dict = None, brand: dict = None, extra: dict = None):
+    brand = brand or {}
+    extra = extra or {}
+    tpl = SMS_TEMPLATES.get(template_key, SMS_TEMPLATES["custom"])
+    name = customer.get("name", "Customer") if customer else "Customer"
+    prop = customer.get("property_name", "") if customer else extra.get("property", "")
+    brand_name = brand.get("brand_name", "RealtyPay")
+    return tpl.format(
+        name=name, property=prop, brand=brand_name,
+        amount=extra.get("amount", "0"), plot=extra.get("plot", ""),
+        total=extra.get("total", "0"), message=extra.get("message", "")
+    )[:160]
+
+@api_router.post("/sms/send")
+async def send_sms(inp: SMSInput, request: Request):
+    user = await get_current_user(request)
+    if not inp.message or not inp.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    if len(inp.message) > 160:
+        raise HTTPException(status_code=400, detail="SMS message must be 160 characters or less")
+
+    phone = inp.phone
+    customer_name = "Unknown"
+    if inp.customer_id:
+        customer = await db.customers.find_one({"id": inp.customer_id}, {"_id": 0})
+        if customer:
+            phone = phone or customer.get("phone", "")
+            customer_name = customer.get("name", "Unknown")
+
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number required")
+    clean = validate_indian_phone(phone)
+    if not clean:
+        raise HTTPException(status_code=400, detail=f"Invalid mobile number. Must be a valid 10-digit Indian mobile number.")
+
+    result = _send_fast2sms(phone, inp.message)
+
+    msg_doc = {
+        "id": str(uuid.uuid4()), "customer_id": inp.customer_id or "",
+        "customer_name": customer_name, "phone": clean,
+        "message_type": f"sms_{inp.message_type}", "message_text": inp.message,
+        "channel": "sms",
+        "status": "delivered" if result.get("success") else "failed",
+        "error": result.get("error", "") or result.get("message", ""),
+        "request_id": result.get("request_id", ""),
+        "sent_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.messages.insert_one(msg_doc)
+    msg_doc.pop("_id", None)
+    return {"success": result.get("success", False), "message": result.get("message", "SMS processed"), "data": msg_doc}
+
+@api_router.post("/sms/bulk-send")
+async def bulk_send_sms(inp: BulkSMSInput, request: Request):
+    user = await get_current_user(request)
+    if not inp.customer_ids:
+        raise HTTPException(status_code=400, detail="No customers selected")
+    brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0}) or {}
+    results = {"sent": 0, "failed": 0, "errors": []}
+    for cid in inp.customer_ids:
+        customer = await db.customers.find_one({"id": cid}, {"_id": 0})
+        if not customer:
+            results["failed"] += 1
+            results["errors"].append(f"Customer {cid} not found")
+            continue
+        phone = customer.get("phone", "")
+        clean = validate_indian_phone(phone)
+        if not clean:
+            results["failed"] += 1
+            results["errors"].append(f"{customer.get('name','?')}: Invalid mobile number")
+            # Still log attempt
+            await db.messages.insert_one({
+                "id": str(uuid.uuid4()), "customer_id": cid,
+                "customer_name": customer.get("name", ""), "phone": phone,
+                "message_type": f"sms_{inp.message_type}", "channel": "sms",
+                "message_text": inp.custom_message or build_sms_text(inp.message_type, customer, brand),
+                "status": "failed", "error": "Invalid mobile number",
+                "sent_at": datetime.now(timezone.utc).isoformat()
+            })
+            continue
+        text = inp.custom_message if inp.custom_message else build_sms_text(inp.message_type, customer, brand)
+        if not text.strip():
+            results["failed"] += 1
+            continue
+        sms_result = _send_fast2sms(phone, text[:160])
+        status = "delivered" if sms_result.get("success") else "failed"
+        await db.messages.insert_one({
+            "id": str(uuid.uuid4()), "customer_id": cid,
+            "customer_name": customer.get("name", ""), "phone": clean,
+            "message_type": f"sms_{inp.message_type}", "channel": "sms",
+            "message_text": text[:160], "status": status,
+            "error": sms_result.get("error", ""),
+            "request_id": sms_result.get("request_id", ""),
+            "sent_at": datetime.now(timezone.utc).isoformat()
+        })
+        if sms_result.get("success"):
+            results["sent"] += 1
+        else:
+            results["failed"] += 1
+            results["errors"].append(f"{customer.get('name','?')}: {sms_result.get('error', 'Send failed')}")
+    return {"message": f"SMS sent: {results['sent']}, Failed: {results['failed']}", "results": results}
+
+@api_router.get("/sms/history")
+async def sms_history(request: Request, customer_id: str = ""):
+    await get_current_user(request)
+    query = {"channel": "sms"}
+    if customer_id:
+        query["customer_id"] = customer_id
+    messages = await db.messages.find(query, {"_id": 0}).sort("sent_at", -1).to_list(500)
+    return messages
+
+# ═══════════════════════════════════════════
 #  PDF REPORTS
 # ═══════════════════════════════════════════
 @api_router.get("/reports/monthly-pdf")
