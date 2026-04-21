@@ -35,6 +35,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=[
+        "https://krushnakunjassociation.com",
+        "https://www.krushnakunjassociation.com",
         "https://krishnakunjassociation.com",
         "https://www.krishnakunjassociation.com",
         "https://property-receivables.preview.emergentagent.com",
