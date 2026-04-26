@@ -4,10 +4,12 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { UserPlus, Search, Phone, Mail, Building, ChevronRight } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { UserPlus, Search, Phone, ChevronRight, MoreHorizontal, Pencil, Trash2, Eye, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const emptyCustomer = {
@@ -15,11 +17,65 @@ const emptyCustomer = {
   total_property_value: '', emi_amount: '', agreement_start_date: '', due_date_day: 5
 };
 
+function CustomerForm({ form, updateField, onSubmit, saving, submitLabel, onCancel }) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-4 mt-2">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="col-span-2">
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Full Name</Label>
+          <Input data-testid="input-customer-name" value={form.name} onChange={e => updateField('name', e.target.value)} required className="mt-1" placeholder="Ramesh Patil" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Phone (WhatsApp)</Label>
+          <Input data-testid="input-customer-phone" value={form.phone} onChange={e => updateField('phone', e.target.value)} required className="mt-1" placeholder="+919876543210" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Email</Label>
+          <Input data-testid="input-customer-email" type="email" value={form.email} onChange={e => updateField('email', e.target.value)} className="mt-1" placeholder="email@example.com" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Property Name</Label>
+          <Input data-testid="input-property-name" value={form.property_name} onChange={e => updateField('property_name', e.target.value)} required className="mt-1" placeholder="Sunrise Towers" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Unit No.</Label>
+          <Input data-testid="input-unit-no" value={form.unit_no} onChange={e => updateField('unit_no', e.target.value)} required className="mt-1" placeholder="4B" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Total Property Value</Label>
+          <Input data-testid="input-total-value" type="number" value={form.total_property_value} onChange={e => updateField('total_property_value', e.target.value)} required className="mt-1" placeholder="3000000" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">EMI Amount (Monthly)</Label>
+          <Input data-testid="input-emi-amount" type="number" value={form.emi_amount} onChange={e => updateField('emi_amount', e.target.value)} required className="mt-1" placeholder="25000" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Agreement Start Date</Label>
+          <Input data-testid="input-start-date" type="date" value={form.agreement_start_date} onChange={e => updateField('agreement_start_date', e.target.value)} required className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Due Date (Day of Month)</Label>
+          <Input data-testid="input-due-day" type="number" min={1} max={28} value={form.due_date_day} onChange={e => updateField('due_date_day', e.target.value)} className="mt-1" placeholder="5" />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button data-testid="submit-customer-btn" type="submit" disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
+          {saving ? 'Saving...' : submitLabel}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [form, setForm] = useState({ ...emptyCustomer });
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
@@ -28,23 +84,27 @@ export default function CustomersPage() {
     setLoading(true);
     api.get('/customers', { params: { search } })
       .then(r => setCustomers(r.data))
-      .catch(e => toast.error('Failed to load customers'))
+      .catch(() => toast.error('Failed to load customers'))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, [search]);
 
-  const handleSubmit = async (e) => {
+  const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const buildPayload = () => ({
+    ...form,
+    total_property_value: parseFloat(form.total_property_value) || 0,
+    emi_amount: parseFloat(form.emi_amount) || 0,
+    due_date_day: parseInt(form.due_date_day) || 5,
+  });
+
+  // ── Add ──
+  const handleAdd = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = {
-        ...form,
-        total_property_value: parseFloat(form.total_property_value) || 0,
-        emi_amount: parseFloat(form.emi_amount) || 0,
-        due_date_day: parseInt(form.due_date_day) || 5,
-      };
-      await api.post('/customers', payload);
+      await api.post('/customers', buildPayload());
       toast.success('Customer added successfully');
       setShowAdd(false);
       setForm({ ...emptyCustomer });
@@ -55,7 +115,51 @@ export default function CustomersPage() {
     setSaving(false);
   };
 
-  const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  // ── Edit ──
+  const openEdit = (c) => {
+    setEditingCustomer(c);
+    setForm({
+      name: c.name || '', phone: c.phone || '', email: c.email || '',
+      property_name: c.property_name || '', unit_no: c.unit_no || '',
+      total_property_value: c.total_property_value || '',
+      emi_amount: c.emi_amount || '',
+      agreement_start_date: c.agreement_start_date || '',
+      due_date_day: c.due_date_day || 5,
+    });
+    setShowEdit(true);
+  };
+
+  const handleEdit = async (e) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+    setSaving(true);
+    try {
+      await api.put(`/customers/${editingCustomer.id}`, buildPayload());
+      toast.success('Customer updated successfully');
+      setShowEdit(false);
+      setEditingCustomer(null);
+      setForm({ ...emptyCustomer });
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to update customer');
+    }
+    setSaving(false);
+  };
+
+  // ── Delete ──
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    setSaving(true);
+    try {
+      await api.delete(`/customers/${deleteConfirm.id}`);
+      toast.success(`${deleteConfirm.name} deleted`);
+      setDeleteConfirm(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete customer');
+    }
+    setSaving(false);
+  };
 
   return (
     <div data-testid="customers-page" className="space-y-6">
@@ -64,7 +168,7 @@ export default function CustomersPage() {
           <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900 tracking-tight" style={{ fontFamily: 'Outfit' }}>Customers</h1>
           <p className="text-sm text-neutral-500 mt-0.5">{customers.length} registered customers</p>
         </div>
-        <Button data-testid="add-customer-btn" onClick={() => setShowAdd(true)} style={{ backgroundColor: 'var(--brand-primary)' }}>
+        <Button data-testid="add-customer-btn" onClick={() => { setForm({ ...emptyCustomer }); setShowAdd(true); }} style={{ backgroundColor: 'var(--brand-primary)' }}>
           <UserPlus className="w-4 h-4 mr-1.5" /> Add Customer
         </Button>
       </div>
@@ -72,13 +176,7 @@ export default function CustomersPage() {
       {/* Search */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-        <Input
-          data-testid="customer-search"
-          className="pl-10"
-          placeholder="Search by name, phone, or ID..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+        <Input data-testid="customer-search" className="pl-10" placeholder="Search by name, phone, or ID..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       {/* Table */}
@@ -91,7 +189,7 @@ export default function CustomersPage() {
               <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 text-right">EMI</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Due Date</TableHead>
               <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Contact</TableHead>
-              <TableHead />
+              <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 w-16">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -100,13 +198,8 @@ export default function CustomersPage() {
             ) : customers.length === 0 ? (
               <TableRow><TableCell colSpan={6} className="text-center py-12 text-neutral-400">No customers found. Add your first customer.</TableCell></TableRow>
             ) : customers.map(c => (
-              <TableRow
-                key={c.id}
-                data-testid={`customer-row-${c.customer_id}`}
-                className="cursor-pointer hover:bg-neutral-50/50"
-                onClick={() => navigate(`/customers/${c.id}`)}
-              >
-                <TableCell>
+              <TableRow key={c.id} data-testid={`customer-row-${c.customer_id}`} className="hover:bg-neutral-50/50">
+                <TableCell className="cursor-pointer" onClick={() => navigate(`/customers/${c.id}`)}>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-xs font-semibold text-neutral-600">
                       {(c.name || '?')[0].toUpperCase()}
@@ -134,7 +227,24 @@ export default function CustomersPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <ChevronRight className="w-4 h-4 text-neutral-300" />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button data-testid={`customer-actions-${c.customer_id}`} variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
+                        <MoreHorizontal className="w-4 h-4 text-neutral-400" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuItem data-testid={`view-customer-${c.customer_id}`} onClick={() => navigate(`/customers/${c.id}`)}>
+                        <Eye className="w-3.5 h-3.5 mr-2" /> View Profile
+                      </DropdownMenuItem>
+                      <DropdownMenuItem data-testid={`edit-customer-${c.customer_id}`} onClick={() => openEdit(c)}>
+                        <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem data-testid={`delete-customer-${c.customer_id}`} className="text-red-600 focus:text-red-600" onClick={() => setDeleteConfirm(c)}>
+                        <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))}
@@ -149,52 +259,44 @@ export default function CustomersPage() {
             <DialogTitle style={{ fontFamily: 'Outfit' }}>Add New Customer</DialogTitle>
             <DialogDescription>Enter customer and property details to create a profile.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Full Name</Label>
-                <Input data-testid="input-customer-name" value={form.name} onChange={e => updateField('name', e.target.value)} required className="mt-1" placeholder="Ramesh Patil" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Phone (WhatsApp)</Label>
-                <Input data-testid="input-customer-phone" value={form.phone} onChange={e => updateField('phone', e.target.value)} required className="mt-1" placeholder="+919876543210" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Email</Label>
-                <Input data-testid="input-customer-email" type="email" value={form.email} onChange={e => updateField('email', e.target.value)} className="mt-1" placeholder="email@example.com" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Property Name</Label>
-                <Input data-testid="input-property-name" value={form.property_name} onChange={e => updateField('property_name', e.target.value)} required className="mt-1" placeholder="Sunrise Towers" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Unit No.</Label>
-                <Input data-testid="input-unit-no" value={form.unit_no} onChange={e => updateField('unit_no', e.target.value)} required className="mt-1" placeholder="4B" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Total Property Value</Label>
-                <Input data-testid="input-total-value" type="number" value={form.total_property_value} onChange={e => updateField('total_property_value', e.target.value)} required className="mt-1" placeholder="3000000" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">EMI Amount (Monthly)</Label>
-                <Input data-testid="input-emi-amount" type="number" value={form.emi_amount} onChange={e => updateField('emi_amount', e.target.value)} required className="mt-1" placeholder="25000" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Agreement Start Date</Label>
-                <Input data-testid="input-start-date" type="date" value={form.agreement_start_date} onChange={e => updateField('agreement_start_date', e.target.value)} required className="mt-1" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Due Date (Day of Month)</Label>
-                <Input data-testid="input-due-day" type="number" min={1} max={28} value={form.due_date_day} onChange={e => updateField('due_date_day', e.target.value)} className="mt-1" placeholder="5" />
-              </div>
+          <CustomerForm form={form} updateField={updateField} onSubmit={handleAdd} saving={saving} submitLabel="Add Customer" onCancel={() => setShowAdd(false)} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Customer Dialog */}
+      <Dialog open={showEdit} onOpenChange={(open) => { if (!open) { setShowEdit(false); setEditingCustomer(null); } }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Outfit' }}>Edit Customer</DialogTitle>
+            <DialogDescription>Update {editingCustomer?.name}'s details. Changes to EMI amount won't affect existing payment records.</DialogDescription>
+          </DialogHeader>
+          <CustomerForm form={form} updateField={updateField} onSubmit={handleEdit} saving={saving} submitLabel="Save Changes" onCancel={() => { setShowEdit(false); setEditingCustomer(null); }} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Outfit' }}>Delete Customer</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-start gap-3 py-2">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button data-testid="submit-customer-btn" type="submit" disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
-                {saving ? 'Saving...' : 'Add Customer'}
-              </Button>
+            <div>
+              <p className="text-sm text-neutral-700">
+                Are you sure you want to delete <strong>{deleteConfirm?.name}</strong> ({deleteConfirm?.customer_id})?
+              </p>
+              <p className="text-xs text-neutral-500 mt-1">This will also remove all associated payments and messages. This action cannot be undone.</p>
             </div>
-          </form>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button data-testid="confirm-delete-customer-btn" variant="destructive" onClick={handleDelete} disabled={saving}>
+              {saving ? 'Deleting...' : 'Delete Customer'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
