@@ -14,6 +14,7 @@ import ReportsPage from "@/pages/ReportsPage";
 import LayoutsPage from "@/pages/LayoutsPage";
 import LayoutDetailPage from "@/pages/LayoutDetailPage";
 import CashFlowPage from "@/pages/CashFlowPage";
+import UsersPage from "@/pages/UsersPage";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -51,6 +52,7 @@ function AppRoutes() {
         <Route path="whatsapp" element={<WhatsAppPage />} />
         <Route path="brand" element={<BrandSettingsPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="users" element={<UsersPage />} />
       </Route>
     </Routes>
   );

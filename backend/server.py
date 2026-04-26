@@ -279,6 +279,38 @@ async def logout(response: Response):
     return {"message": "Logged out"}
 
 # ═══════════════════════════════════════════
+#  USER MANAGEMENT (Admin only)
+# ═══════════════════════════════════════════
+class RoleUpdateInput(BaseModel):
+    role: str
+
+@api_router.get("/users")
+async def list_users(request: Request):
+    user = await require_role("admin")(request)
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(200)
+    return users
+
+@api_router.put("/users/{user_id}/role")
+async def update_user_role(user_id: str, inp: RoleUpdateInput, request: Request):
+    admin = await require_role("admin")(request)
+    if inp.role not in ["admin", "agent", "viewer"]:
+        raise HTTPException(status_code=400, detail="Role must be admin, agent, or viewer")
+    result = await db.users.update_one({"id": user_id}, {"$set": {"role": inp.role}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": f"Role updated to {inp.role}"}
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, request: Request):
+    admin = await require_role("admin")(request)
+    if admin["id"] == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    result = await db.users.delete_one({"id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted"}
+
+# ═══════════════════════════════════════════
 #  BRAND SETTINGS
 # ═══════════════════════════════════════════
 @api_router.get("/brand")
@@ -395,7 +427,7 @@ async def update_customer(customer_id: str, inp: CustomerInput, request: Request
 
 @api_router.delete("/customers/{customer_id}")
 async def delete_customer(customer_id: str, request: Request):
-    user = await require_role("admin")(request)
+    user = await require_role("admin", "agent")(request)
     result = await db.customers.delete_one({"id": customer_id})
     await db.payments.delete_many({"customer_id": customer_id})
     await db.messages.delete_many({"customer_id": customer_id})
