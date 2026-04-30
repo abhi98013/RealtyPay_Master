@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import {
   LayoutDashboard, Users, CreditCard, MessageSquare,
   Palette, FileText, LogOut, Menu, X, ChevronRight,
-  Grid3X3, Wallet, Map, Shield
+  Grid3X3, Wallet, Map
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -17,7 +17,6 @@ const navItems = [
   { path: '/payments', label: 'EMI Tracker', icon: CreditCard, testId: 'nav-payments' },
   { path: '/whatsapp', label: 'WhatsApp Center', icon: MessageSquare, testId: 'nav-whatsapp' },
   { path: '/reports', label: 'Reports', icon: FileText, testId: 'nav-reports' },
-  { path: '/users', label: 'Users & Roles', icon: Shield, testId: 'nav-users' },
   { path: '/brand', label: 'Brand Settings', icon: Palette, testId: 'nav-brand' },
 ];
 

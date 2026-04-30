@@ -60,7 +60,7 @@ export default function PaymentTrackerPage() {
         setSaving(false);
         return;
       }
-      await api.post('/payments/record', {
+      const res = await api.post('/payments/record', {
         customer_id: selectedCell.customer.id,
         month: selectedCell.month,
         year,
@@ -70,6 +70,11 @@ export default function PaymentTrackerPage() {
         status: amount >= (selectedCell.customer.emi_amount || 0) ? 'paid' : 'partial'
       });
       toast.success('Payment recorded');
+      if (res.data?.sms_sent) {
+        toast.success('SMS confirmation sent to customer');
+      } else if (res.data?.sms_sent === false) {
+        toast.info('Payment saved. SMS delivery pending.');
+      }
       setSheetOpen(false);
       load();
     } catch (err) {

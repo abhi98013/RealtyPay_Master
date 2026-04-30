@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 
 const emptyCustomer = {
   name: '', phone: '', email: '', property_name: '', unit_no: '',
-  total_property_value: '', emi_amount: '', agreement_start_date: '', due_date_day: 5
+  total_property_value: '', emi_amount: '', agreement_start_date: '', due_date_day: 5, tenure_months: 12
 };
 
 function CustomerForm({ form, updateField, onSubmit, saving, submitLabel, onCancel }) {
@@ -55,9 +55,30 @@ function CustomerForm({ form, updateField, onSubmit, saving, submitLabel, onCanc
         </div>
         <div>
           <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Due Date (Day of Month)</Label>
-          <Input data-testid="input-due-day" type="number" min={1} max={28} value={form.due_date_day} onChange={e => updateField('due_date_day', e.target.value)} className="mt-1" placeholder="5" />
+          <Input data-testid="input-due-day" type="number" min={1} max={31} value={form.due_date_day} onChange={e => updateField('due_date_day', e.target.value)} className="mt-1" placeholder="5" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Tenure (Months)</Label>
+          <Input data-testid="input-tenure" type="number" min={1} max={60} value={form.tenure_months} onChange={e => updateField('tenure_months', e.target.value)} className="mt-1" placeholder="12" />
+          <p className="text-[10px] text-neutral-400 mt-0.5">1 to 60 months (5 years max)</p>
         </div>
       </div>
+      {form.agreement_start_date && form.tenure_months > 0 && (
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-3 text-sm">
+          <span className="text-neutral-500">Final Due Date: </span>
+          <span className="font-mono font-medium text-neutral-800">
+            {(() => {
+              try {
+                const start = new Date(form.agreement_start_date);
+                const end = new Date(start);
+                end.setMonth(end.getMonth() + parseInt(form.tenure_months || 12));
+                return end.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+              } catch { return '-'; }
+            })()}
+          </span>
+          <span className="text-neutral-400 ml-2">({form.tenure_months} installments)</span>
+        </div>
+      )}
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
         <Button data-testid="submit-customer-btn" type="submit" disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
@@ -97,6 +118,7 @@ export default function CustomersPage() {
     total_property_value: parseFloat(form.total_property_value) || 0,
     emi_amount: parseFloat(form.emi_amount) || 0,
     due_date_day: parseInt(form.due_date_day) || 5,
+    tenure_months: parseInt(form.tenure_months) || 12,
   });
 
   // ── Add ──
@@ -125,6 +147,7 @@ export default function CustomersPage() {
       emi_amount: c.emi_amount || '',
       agreement_start_date: c.agreement_start_date || '',
       due_date_day: c.due_date_day || 5,
+      tenure_months: c.tenure_months || 12,
     });
     setShowEdit(true);
   };

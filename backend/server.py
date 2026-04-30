@@ -134,7 +134,7 @@ class RegisterInput(BaseModel):
     email: str
     password: str
     name: str
-    role: str = "viewer"
+    role: str = "admin"
 
 class LoginInput(BaseModel):
     email: str
@@ -150,6 +150,7 @@ class CustomerInput(BaseModel):
     emi_amount: float
     agreement_start_date: str
     due_date_day: int = 5
+    tenure_months: int = 12
 
 class PaymentInput(BaseModel):
     customer_id: str
@@ -245,7 +246,7 @@ async def register(inp: RegisterInput, response: Response):
     user_doc = {
         "id": user_id, "email": email, "name": inp.name,
         "password_hash": hash_password(inp.password),
-        "role": inp.role if inp.role in ["admin", "agent", "viewer"] else "viewer",
+        "role": "admin",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.users.insert_one(user_doc)
@@ -286,13 +287,13 @@ class RoleUpdateInput(BaseModel):
 
 @api_router.get("/users")
 async def list_users(request: Request):
-    user = await require_role("admin")(request)
+    user = await get_current_user(request)
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(200)
     return users
 
 @api_router.put("/users/{user_id}/role")
 async def update_user_role(user_id: str, inp: RoleUpdateInput, request: Request):
-    admin = await require_role("admin")(request)
+    user = await get_current_user(request)
     if inp.role not in ["admin", "agent", "viewer"]:
         raise HTTPException(status_code=400, detail="Role must be admin, agent, or viewer")
     result = await db.users.update_one({"id": user_id}, {"$set": {"role": inp.role}})
@@ -302,7 +303,7 @@ async def update_user_role(user_id: str, inp: RoleUpdateInput, request: Request)
 
 @api_router.delete("/users/{user_id}")
 async def delete_user(user_id: str, request: Request):
-    admin = await require_role("admin")(request)
+    user = await get_current_user(request)
     if admin["id"] == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     result = await db.users.delete_one({"id": user_id})
@@ -377,20 +378,24 @@ async def create_customer(inp: CustomerInput, request: Request):
         "emi_amount": inp.emi_amount,
         "agreement_start_date": inp.agreement_start_date,
         "due_date_day": inp.due_date_day,
+        "tenure_months": inp.tenure_months,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"]
     }
     await db.customers.insert_one(doc)
-    # Auto-generate payment slots
+    # Auto-generate payment slots for full tenure (up to 60 months)
     try:
         start = datetime.fromisoformat(inp.agreement_start_date)
     except Exception:
         start = datetime.now(timezone.utc)
-    current_year = datetime.now(timezone.utc).year
-    for m in range(start.month, 13):
+    tenure = min(max(inp.tenure_months, 1), 60)
+    for i in range(tenure):
+        m = start.month + i
+        y = start.year + (m - 1) // 12
+        m = ((m - 1) % 12) + 1
         payment_doc = {
             "id": str(uuid.uuid4()), "customer_id": cust_uuid,
-            "month": m, "year": current_year,
+            "month": m, "year": y,
             "status": "pending", "emi_amount": inp.emi_amount,
             "amount_paid": 0, "remaining": inp.emi_amount,
             "payment_mode": "", "reference_number": "",
@@ -427,7 +432,7 @@ async def update_customer(customer_id: str, inp: CustomerInput, request: Request
 
 @api_router.delete("/customers/{customer_id}")
 async def delete_customer(customer_id: str, request: Request):
-    user = await require_role("admin", "agent")(request)
+    user = await get_current_user(request)
     result = await db.customers.delete_one({"id": customer_id})
     await db.payments.delete_many({"customer_id": customer_id})
     await db.messages.delete_many({"customer_id": customer_id})
@@ -553,11 +558,30 @@ async def record_payment(inp: PaymentInput, request: Request):
     # Auto-send WhatsApp based on status
     msg_type = "payment_received" if payment["status"] == "paid" else "partial_payment"
     await _send_mock_message(customer, payment, msg_type, brand)
+    # Send SMS via Fast2SMS on payment recording
+    ref_no = inp.reference_number or f"TXN{uuid.uuid4().hex[:8].upper()}"
+    pay_date = datetime.now(timezone.utc).strftime("%d/%m/%Y")
+    sms_text = f"Dear {customer['name']}, payment of Rs.{inp.amount_paid:,.0f} received. Ref No: {ref_no}. Date: {pay_date}. Thank you. - {brand.get('brand_name', 'KrushnaKunj Association') if brand else 'KrushnaKunj Association'}"
+    phone = customer.get("phone", "")
+    if phone:
+        sms_result = _send_fast2sms(phone, sms_text[:160])
+        payment["sms_sent"] = sms_result.get("success", False)
+        payment["sms_message"] = sms_text[:160]
+        # Log SMS
+        await db.messages.insert_one({
+            "id": str(uuid.uuid4()), "customer_id": customer["id"],
+            "customer_name": customer["name"], "phone": phone,
+            "message_type": "sms_payment_received", "channel": "sms",
+            "message_text": sms_text[:160],
+            "status": "delivered" if sms_result.get("success") else "failed",
+            "error": sms_result.get("error", "") or sms_result.get("message", ""),
+            "sent_at": datetime.now(timezone.utc).isoformat()
+        })
     return payment
 
 @api_router.put("/payments/{payment_id}/waive")
 async def waive_payment(payment_id: str, request: Request):
-    user = await require_role("admin")(request)
+    user = await get_current_user(request)
     result = await db.payments.update_one({"id": payment_id}, {"$set": {
         "status": "waived", "remaining": 0, "penalty_amount": 0,
         "updated_at": datetime.now(timezone.utc).isoformat()
@@ -1104,7 +1128,7 @@ async def update_layout(layout_id: str, inp: LayoutInput, request: Request):
 
 @api_router.delete("/layouts/{layout_id}")
 async def delete_layout(layout_id: str, request: Request):
-    user = await require_role("admin")(request)
+    user = await get_current_user(request)
     await db.layouts.delete_one({"id": layout_id})
     await db.plots.delete_many({"layout_id": layout_id})
     await db.layout_maps.delete_many({"layout_id": layout_id})
@@ -1218,6 +1242,8 @@ async def upload_map(layout_id: str, request: Request, file: UploadFile = File(.
     data = await file.read()
     if len(data) > MAX_MAP_SIZE:
         raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
+    # Enforce single map per layout - delete existing
+    await db.layout_maps.delete_many({"layout_id": layout_id})
     ext = file.filename.split(".")[-1] if "." in file.filename else "png"
     storage_path = f"{APP_NAME}/maps/{layout_id}/{uuid.uuid4()}.{ext}"
     result = put_object(storage_path, data, file.content_type or "application/octet-stream")
@@ -1252,7 +1278,7 @@ async def download_map(map_id: str, request: Request):
 
 @api_router.delete("/layout-maps/{map_id}")
 async def delete_map(map_id: str, request: Request):
-    user = await require_role("admin")(request)
+    user = await get_current_user(request)
     await db.layout_maps.delete_one({"id": map_id})
     return {"message": "Map deleted"}
 
@@ -1314,7 +1340,7 @@ async def list_plot_payments(request: Request, plot_id: str = "", start_date: st
 
 @api_router.delete("/plot-payments/{payment_id}")
 async def delete_plot_payment(payment_id: str, request: Request):
-    user = await require_role("admin")(request)
+    user = await get_current_user(request)
     payment = await db.plot_payments.find_one({"id": payment_id}, {"_id": 0})
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -1552,7 +1578,7 @@ async def _audit_log(user, action, entity_type, entity_id, details):
 
 @api_router.get("/audit-log")
 async def get_audit_log(request: Request, limit: int = 100):
-    user = await require_role("admin")(request)
+    user = await get_current_user(request)
     logs = await db.audit_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return logs
 
