@@ -12,11 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ArrowLeft, PlusCircle, Upload, Download, ZoomIn, ZoomOut,
-  Trash2, FileText, IndianRupee, MapPin, Edit, Eye, X, Maximize2, Minimize2
+  Trash2, FileText, IndianRupee, MapPin, Pencil, Eye, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const emptyPlot = { plot_number: '', length: '', width: '', plot_type: 'residential', price_per_sqft: '', status: 'available' };
+const emptyPlot = { plot_number: '', area: '', plot_type: 'residential', price_per_sqft: '', status: 'available' };
 
 function PlotTile({ plot, onClick }) {
   const colorMap = {
@@ -41,8 +41,8 @@ function PlotTile({ plot, onClick }) {
         <TooltipContent side="top" className="bg-neutral-900 text-white border-none p-3 max-w-xs">
           <div className="space-y-1">
             <p className="font-semibold text-sm">Plot {plot.plot_number}</p>
-            <p className="text-xs text-neutral-300">{plot.length} ft x {plot.width} ft = {plot.area} sq.ft</p>
-            <p className="text-xs text-neutral-300">Type: {plot.plot_type} | Rs.{plot.price_per_sqft}/sqft</p>
+            <p className="text-xs text-neutral-300">Area: {plot.area} sq.ft | Type: {plot.plot_type}</p>
+            <p className="text-xs text-neutral-300">Rs.{plot.price_per_sqft}/sqft</p>
             <p className="text-xs font-mono font-semibold">Total: Rs.{(plot.total_price || 0).toLocaleString()}</p>
             <p className={`text-xs font-semibold ${plot.status === 'available' ? 'text-emerald-400' : plot.status === 'sold' ? 'text-rose-400' : 'text-amber-400'}`}>
               {plot.status.toUpperCase()}
@@ -61,31 +61,28 @@ export default function LayoutDetailPage() {
   const [layout, setLayout] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAddPlot, setShowAddPlot] = useState(false);
+  const [showEditPlot, setShowEditPlot] = useState(false);
+  const [editingPlot, setEditingPlot] = useState(null);
   const [plotForm, setPlotForm] = useState({ ...emptyPlot });
   const [saving, setSaving] = useState(false);
   const [selectedPlot, setSelectedPlot] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [confirmDialog, setConfirmDialog] = useState(null);
-  const [mapZoom, setMapZoom] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [viewingMap, setViewingMap] = useState(null);
   const [viewerZoom, setViewerZoom] = useState(1);
   const [customers, setCustomers] = useState([]);
-  // Payment form
   const [payForm, setPayForm] = useState({ amount: '', payment_date: '', payment_mode: 'upi', cheque_number: '', reference_number: '', notes: '' });
   const [plotPayments, setPlotPayments] = useState([]);
   const [plotStats, setPlotStats] = useState({ total_paid: 0, remaining_balance: 0 });
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([
-      api.get(`/layouts/${id}`),
-      api.get('/customers')
-    ]).then(([lr, cr]) => {
-      setLayout(lr.data);
-      setCustomers(cr.data);
-    }).catch(() => toast.error('Failed to load layout')).finally(() => setLoading(false));
+    Promise.all([api.get(`/layouts/${id}`), api.get('/customers')])
+      .then(([lr, cr]) => { setLayout(lr.data); setCustomers(cr.data); })
+      .catch(() => toast.error('Failed to load layout'))
+      .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -98,13 +95,14 @@ export default function LayoutDetailPage() {
     } catch { setPlotPayments([]); setPlotStats({ total_paid: 0, remaining_balance: 0 }); }
   };
 
+  // ── Add Plot ──
   const handleAddPlot = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
       await api.post('/plots', {
         layout_id: id, plot_number: plotForm.plot_number,
-        length: parseFloat(plotForm.length), width: parseFloat(plotForm.width),
+        area: parseFloat(plotForm.area),
         plot_type: plotForm.plot_type, price_per_sqft: parseFloat(plotForm.price_per_sqft),
         status: plotForm.status
       });
@@ -112,17 +110,47 @@ export default function LayoutDetailPage() {
       setShowAddPlot(false);
       setPlotForm({ ...emptyPlot });
       load();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to add plot');
-    }
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to add plot'); }
     setSaving(false);
   };
 
+  // ── Edit Plot (from list/canvas) ──
+  const openEditPlot = (plot, e) => {
+    if (e) e.stopPropagation();
+    setEditingPlot(plot);
+    setPlotForm({
+      plot_number: plot.plot_number, area: plot.area || '',
+      plot_type: plot.plot_type || 'residential', price_per_sqft: plot.price_per_sqft || '',
+      status: plot.status || 'available'
+    });
+    setShowEditPlot(true);
+  };
+
+  const handleEditPlot = async (e) => {
+    e.preventDefault();
+    if (!editingPlot) return;
+    setSaving(true);
+    try {
+      await api.put(`/plots/${editingPlot.id}`, {
+        plot_number: plotForm.plot_number,
+        area: parseFloat(plotForm.area) || 0,
+        plot_type: plotForm.plot_type,
+        price_per_sqft: parseFloat(plotForm.price_per_sqft) || 0,
+        status: plotForm.status,
+      });
+      toast.success('Plot updated');
+      setShowEditPlot(false);
+      setEditingPlot(null);
+      setPlotForm({ ...emptyPlot });
+      load();
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to update plot'); }
+    setSaving(false);
+  };
+
+  // ── Plot Detail Sheet (click tile) ──
   const openPlotSheet = (plot) => {
     setSelectedPlot(plot);
     setEditForm({
-      plot_number: plot.plot_number, length: plot.length, width: plot.width,
-      plot_type: plot.plot_type, price_per_sqft: plot.price_per_sqft,
       status: plot.status, customer_id: plot.customer_id || '', customer_name: plot.customer_name || '',
       booking_date: plot.booking_date || '', agreement_date: plot.agreement_date || ''
     });
@@ -139,7 +167,7 @@ export default function LayoutDetailPage() {
     }
   };
 
-  const handleUpdatePlot = async () => {
+  const handleUpdatePlotSheet = async () => {
     if (!selectedPlot) return;
     setSaving(true);
     try {
@@ -147,9 +175,7 @@ export default function LayoutDetailPage() {
       toast.success('Plot updated');
       setSheetOpen(false);
       load();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to update');
-    }
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to update'); }
     setSaving(false);
   };
 
@@ -165,12 +191,11 @@ export default function LayoutDetailPage() {
       setPayForm({ amount: '', payment_date: new Date().toISOString().split('T')[0], payment_mode: 'upi', cheque_number: '', reference_number: '', notes: '' });
       await loadPlotDetails(selectedPlot);
       load();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to record payment');
-    }
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to record payment'); }
     setSaving(false);
   };
 
+  // ── Map functions ──
   const handleUploadMap = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -179,14 +204,11 @@ export default function LayoutDetailPage() {
     if (file.size > 10 * 1024 * 1024) { toast.error('File size exceeds 10MB limit'); return; }
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
+      const fd = new FormData(); fd.append('file', file);
       await api.post(`/layouts/${id}/maps`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Map uploaded');
       load();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Upload failed');
-    }
+    } catch (err) { toast.error(err.response?.data?.detail || 'Upload failed'); }
     setUploading(false);
   };
 
@@ -194,8 +216,7 @@ export default function LayoutDetailPage() {
     try {
       const r = await api.get(`/layout-maps/${map.id}/download`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([r.data]));
-      const link = document.createElement('a');
-      link.href = url; link.download = map.file_name; link.click();
+      const link = document.createElement('a'); link.href = url; link.download = map.file_name; link.click();
       window.URL.revokeObjectURL(url);
     } catch { toast.error('Download failed'); }
   };
@@ -203,16 +224,22 @@ export default function LayoutDetailPage() {
   const openMapViewer = async (map) => {
     try {
       const r = await api.get(`/layout-maps/${map.id}/download`, { responseType: 'blob' });
-      const blobUrl = window.URL.createObjectURL(r.data);
-      setViewingMap({ ...map, blobUrl });
+      setViewingMap({ ...map, blobUrl: window.URL.createObjectURL(r.data) });
       setViewerZoom(1);
     } catch { toast.error('Failed to load map'); }
   };
 
   const closeMapViewer = () => {
     if (viewingMap?.blobUrl) window.URL.revokeObjectURL(viewingMap.blobUrl);
-    setViewingMap(null);
-    setViewerZoom(1);
+    setViewingMap(null); setViewerZoom(1);
+  };
+
+  const deleteMap = async (map) => {
+    try {
+      await api.delete(`/layout-maps/${map.id}`);
+      toast.success('Map deleted');
+      load();
+    } catch { toast.error('Failed to delete map'); }
   };
 
   const downloadStatement = async () => {
@@ -220,11 +247,10 @@ export default function LayoutDetailPage() {
     try {
       const r = await api.get(`/plot-statements/${selectedPlot.id}/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([r.data]));
-      const link = document.createElement('a');
-      link.href = url; link.download = `statement_${selectedPlot.plot_number}.pdf`; link.click();
+      const link = document.createElement('a'); link.href = url; link.download = `statement_${selectedPlot.plot_number}.pdf`; link.click();
       window.URL.revokeObjectURL(url);
       toast.success('Statement downloaded');
-    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to download statement'); }
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed'); }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64 text-neutral-400">Loading...</div>;
@@ -232,6 +258,43 @@ export default function LayoutDetailPage() {
 
   const plots = layout.plots || [];
   const maps = layout.maps || [];
+
+  // Shared plot form JSX
+  const PlotFormFields = () => (
+    <>
+      <div>
+        <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Plot Number</Label>
+        <Input data-testid="input-plot-number" value={plotForm.plot_number} onChange={e => setPlotForm(p => ({...p, plot_number: e.target.value}))} required placeholder="e.g., A-12" className="mt-1" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Area (sq.ft)</Label>
+          <Input data-testid="input-plot-area" type="number" step="0.01" min="0.01" value={plotForm.area} onChange={e => setPlotForm(p => ({...p, area: e.target.value}))} required className="mt-1 font-mono" placeholder="e.g., 1200" />
+        </div>
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Price per sq.ft</Label>
+          <Input data-testid="input-price-sqft" type="number" step="0.01" min="0.01" value={plotForm.price_per_sqft} onChange={e => setPlotForm(p => ({...p, price_per_sqft: e.target.value}))} required className="mt-1 font-mono" placeholder="e.g., 500" />
+        </div>
+      </div>
+      <div>
+        <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Plot Type</Label>
+        <Select value={plotForm.plot_type} onValueChange={v => setPlotForm(p => ({...p, plot_type: v}))}>
+          <SelectTrigger data-testid="select-plot-type" className="mt-1"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="residential">Residential</SelectItem>
+            <SelectItem value="commercial">Commercial</SelectItem>
+            <SelectItem value="corner">Corner</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {plotForm.area && plotForm.price_per_sqft && parseFloat(plotForm.area) > 0 && parseFloat(plotForm.price_per_sqft) > 0 && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm font-mono">
+          <span className="text-neutral-500">Total Price: </span>
+          <span className="font-semibold text-neutral-800">Rs.{(parseFloat(plotForm.area) * parseFloat(plotForm.price_per_sqft)).toLocaleString()}</span>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div data-testid="layout-detail-page" className="space-y-6">
@@ -250,13 +313,13 @@ export default function LayoutDetailPage() {
             </Button>
             <input type="file" accept=".pdf,.jpg,.jpeg,.png,.svg" onChange={handleUploadMap} className="hidden" />
           </label>
-          <Button data-testid="add-plot-btn" size="sm" onClick={() => setShowAddPlot(true)} style={{ backgroundColor: 'var(--brand-primary)' }}>
+          <Button data-testid="add-plot-btn" size="sm" onClick={() => { setPlotForm({...emptyPlot}); setShowAddPlot(true); }} style={{ backgroundColor: 'var(--brand-primary)' }}>
             <PlusCircle className="w-4 h-4 mr-1.5" /> Add Plot
           </Button>
         </div>
       </div>
 
-      {/* Summary Stats */}
+      {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white border border-neutral-200 rounded-lg p-4 text-center"><p className="text-2xl font-semibold font-mono text-neutral-900">{plots.length}</p><p className="text-[10px] uppercase tracking-widest text-neutral-400 font-medium">Total Plots</p></div>
         <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4 text-center"><p className="text-2xl font-semibold font-mono text-emerald-700">{plots.filter(p => p.status === 'available').length}</p><p className="text-[10px] uppercase tracking-widest text-emerald-500 font-medium">Available</p></div>
@@ -271,11 +334,11 @@ export default function LayoutDetailPage() {
           <TabsTrigger data-testid="tab-list" value="list">Plot List</TabsTrigger>
         </TabsList>
 
-        {/* Canvas View */}
+        {/* Canvas */}
         <TabsContent value="canvas" className="mt-4">
           <div className="bg-white border border-neutral-200 rounded-lg p-6">
             {plots.length === 0 ? (
-              <div className="text-center py-16 text-neutral-400"><MapPin className="w-8 h-8 mx-auto mb-2 text-neutral-300" /><p className="text-sm">No plots added yet. Click "Add Plot" to get started.</p></div>
+              <div className="text-center py-16 text-neutral-400"><MapPin className="w-8 h-8 mx-auto mb-2 text-neutral-300" /><p className="text-sm">No plots added yet.</p></div>
             ) : (
               <>
                 <div className="flex items-center gap-4 mb-4 text-xs text-neutral-500">
@@ -291,12 +354,12 @@ export default function LayoutDetailPage() {
           </div>
         </TabsContent>
 
-        {/* Maps View */}
+        {/* Maps */}
         <TabsContent value="maps" className="mt-4">
           <div className="space-y-4">
             {maps.length === 0 ? (
               <div className="bg-white border border-neutral-200 rounded-lg p-12 text-center text-neutral-400">
-                <Upload className="w-8 h-8 mx-auto mb-2 text-neutral-300" /><p className="text-sm">No maps uploaded. Upload a PDF or image map.</p>
+                <Upload className="w-8 h-8 mx-auto mb-2 text-neutral-300" /><p className="text-sm">No map uploaded. Upload a PDF or image.</p>
               </div>
             ) : maps.map(m => (
               <div key={m.id} className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
@@ -311,33 +374,15 @@ export default function LayoutDetailPage() {
                     </div>
                   </div>
                   <div className="flex gap-1.5 shrink-0">
-                    <Button data-testid={`view-map-${m.id}`} variant="outline" size="sm" className="gap-1.5" onClick={() => openMapViewer(m)}>
-                      <Eye className="w-3.5 h-3.5" /> View
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => downloadMap(m)} data-testid={`download-map-${m.id}`}><Download className="w-4 h-4" /></Button>
+                    <Button data-testid={`view-map-${m.id}`} variant="outline" size="sm" className="gap-1.5" onClick={() => openMapViewer(m)}><Eye className="w-3.5 h-3.5" /> View</Button>
+                    <Button variant="ghost" size="icon" onClick={() => downloadMap(m)}><Download className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" className="hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDialog({ message: `Delete map "${m.file_name}"?`, onConfirm: () => { deleteMap(m); setConfirmDialog(null); } })}><Trash2 className="w-4 h-4" /></Button>
                   </div>
                 </div>
-                {/* Inline thumbnail preview for images */}
                 {m.file_type?.startsWith('image') && (
-                  <div
-                    className="p-3 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors"
-                    onClick={() => openMapViewer(m)}
-                  >
-                    <img
-                      src={`${API_URL}/api/layout-maps/${m.id}/download`}
-                      alt={m.file_name}
-                      className="max-h-48 rounded-lg border border-neutral-200 object-contain mx-auto"
-                    />
+                  <div className="p-3 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors" onClick={() => openMapViewer(m)}>
+                    <img src={`${API_URL}/api/layout-maps/${m.id}/download`} alt={m.file_name} className="max-h-48 rounded-lg border border-neutral-200 object-contain mx-auto" />
                     <p className="text-[10px] text-center text-neutral-400 mt-2">Click to view full size</p>
-                  </div>
-                )}
-                {m.file_type === 'application/pdf' && (
-                  <div className="p-4 bg-neutral-50 flex items-center justify-center gap-3">
-                    <FileText className="w-6 h-6 text-rose-400" />
-                    <div>
-                      <p className="text-sm text-neutral-600">PDF Document</p>
-                      <p className="text-[10px] text-neutral-400">Click "View" to open in viewer or download</p>
-                    </div>
                   </div>
                 )}
               </div>
@@ -345,27 +390,26 @@ export default function LayoutDetailPage() {
           </div>
         </TabsContent>
 
-        {/* List View */}
+        {/* Plot List with Edit/Delete */}
         <TabsContent value="list" className="mt-4">
           <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
             <Table>
               <TableHeader><TableRow className="bg-neutral-50">
                 <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Plot No.</TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Dimensions</TableHead>
-                <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 text-right">Area</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 text-right">Area (sqft)</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Type</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 text-right">Price/sqft</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 text-right">Total</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Customer</TableHead>
                 <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500">Status</TableHead>
+                <TableHead className="text-[10px] uppercase tracking-wider font-medium text-neutral-500 w-20">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {plots.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center py-8 text-neutral-400">No plots</TableCell></TableRow>
                 ) : plots.map(p => (
-                  <TableRow key={p.id} className="cursor-pointer hover:bg-neutral-50/50" onClick={() => openPlotSheet(p)} data-testid={`plot-row-${p.plot_number}`}>
-                    <TableCell className="font-mono font-medium text-sm">{p.plot_number}</TableCell>
-                    <TableCell className="text-sm text-neutral-600 font-mono">{p.length}x{p.width} ft</TableCell>
+                  <TableRow key={p.id} className="hover:bg-neutral-50/50" data-testid={`plot-row-${p.plot_number}`}>
+                    <TableCell className="font-mono font-medium text-sm cursor-pointer" onClick={() => openPlotSheet(p)}>{p.plot_number}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{p.area} sqft</TableCell>
                     <TableCell className="text-xs capitalize text-neutral-500">{p.plot_type}</TableCell>
                     <TableCell className="text-right font-mono text-sm">Rs.{p.price_per_sqft}</TableCell>
@@ -375,6 +419,16 @@ export default function LayoutDetailPage() {
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wider ${p.status === 'available' ? 'bg-emerald-100 text-emerald-800' : p.status === 'sold' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
                         {p.status.toUpperCase()}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button data-testid={`edit-plot-${p.plot_number}`} variant="ghost" size="icon" className="h-7 w-7 hover:bg-blue-50 hover:text-blue-600" onClick={(e) => openEditPlot(p, e)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-neutral-100" onClick={() => openPlotSheet(p)}>
+                          <Eye className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -389,52 +443,33 @@ export default function LayoutDetailPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: 'Outfit' }}>Add New Plot</DialogTitle>
-            <DialogDescription>Define plot dimensions and pricing.</DialogDescription>
+            <DialogDescription>Enter area and pricing details.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddPlot} className="space-y-4 mt-2">
-            <div>
-              <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Plot Number</Label>
-              <Input data-testid="input-plot-number" value={plotForm.plot_number} onChange={e => setPlotForm(p => ({...p, plot_number: e.target.value}))} required placeholder="e.g., A-12" className="mt-1" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Length (ft)</Label>
-                <Input data-testid="input-plot-length" type="number" step="0.01" min="0.01" value={plotForm.length} onChange={e => setPlotForm(p => ({...p, length: e.target.value}))} required className="mt-1 font-mono" />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Width (ft)</Label>
-                <Input data-testid="input-plot-width" type="number" step="0.01" min="0.01" value={plotForm.width} onChange={e => setPlotForm(p => ({...p, width: e.target.value}))} required className="mt-1 font-mono" />
-              </div>
-            </div>
-            {plotForm.length && plotForm.width && parseFloat(plotForm.length) > 0 && parseFloat(plotForm.width) > 0 && (
-              <p className="text-xs font-mono text-neutral-500 bg-neutral-50 p-2 rounded">Area: {(parseFloat(plotForm.length) * parseFloat(plotForm.width)).toFixed(2)} sq.ft</p>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Plot Type</Label>
-                <Select value={plotForm.plot_type} onValueChange={v => setPlotForm(p => ({...p, plot_type: v}))}>
-                  <SelectTrigger data-testid="select-plot-type" className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="residential">Residential</SelectItem>
-                    <SelectItem value="commercial">Commercial</SelectItem>
-                    <SelectItem value="corner">Corner</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Price per sq.ft</Label>
-                <Input data-testid="input-price-sqft" type="number" step="0.01" min="0.01" value={plotForm.price_per_sqft} onChange={e => setPlotForm(p => ({...p, price_per_sqft: e.target.value}))} required className="mt-1 font-mono" />
-              </div>
-            </div>
-            {plotForm.length && plotForm.width && plotForm.price_per_sqft && parseFloat(plotForm.price_per_sqft) > 0 && (
-              <p className="text-sm font-mono font-semibold text-neutral-700 bg-blue-50 p-2.5 rounded-lg">
-                Total Price: Rs.{(parseFloat(plotForm.length) * parseFloat(plotForm.width) * parseFloat(plotForm.price_per_sqft)).toLocaleString()}
-              </p>
-            )}
+            <PlotFormFields />
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setShowAddPlot(false)}>Cancel</Button>
               <Button data-testid="submit-plot-btn" type="submit" disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
                 {saving ? 'Adding...' : 'Add Plot'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Plot Dialog */}
+      <Dialog open={showEditPlot} onOpenChange={(open) => { if (!open) { setShowEditPlot(false); setEditingPlot(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Outfit' }}>Edit Plot {editingPlot?.plot_number}</DialogTitle>
+            <DialogDescription>Update plot details. Total price auto-calculates from area and price/sqft.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditPlot} className="space-y-4 mt-2">
+            <PlotFormFields />
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => { setShowEditPlot(false); setEditingPlot(null); }}>Cancel</Button>
+              <Button data-testid="save-edit-plot-btn" type="submit" disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
+                {saving ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </form>
@@ -446,7 +481,7 @@ export default function LayoutDetailPage() {
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
             <SheetTitle style={{ fontFamily: 'Outfit' }}>Plot {selectedPlot?.plot_number}</SheetTitle>
-            <SheetDescription>{selectedPlot?.length}ft x {selectedPlot?.width}ft = {selectedPlot?.area} sq.ft | {selectedPlot?.plot_type}</SheetDescription>
+            <SheetDescription>{selectedPlot?.area} sq.ft | {selectedPlot?.plot_type} | Rs.{selectedPlot?.price_per_sqft}/sqft</SheetDescription>
           </SheetHeader>
           {selectedPlot && (
             <Tabs defaultValue="details" className="mt-4">
@@ -454,7 +489,6 @@ export default function LayoutDetailPage() {
                 <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
                 <TabsTrigger value="payments" className="flex-1">Payments</TabsTrigger>
               </TabsList>
-
               <TabsContent value="details" className="space-y-4 mt-4">
                 <div className="bg-neutral-50 rounded-lg p-4 space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-neutral-500">Total Price</span><span className="font-mono font-semibold">Rs.{(selectedPlot.total_price || 0).toLocaleString()}</span></div>
@@ -464,25 +498,15 @@ export default function LayoutDetailPage() {
                 <div>
                   <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Status</Label>
                   <Select value={editForm.status} onValueChange={handleStatusChange}>
-                    <SelectTrigger data-testid="edit-plot-status" className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="available">Available</SelectItem>
-                      <SelectItem value="reserved">Reserved</SelectItem>
-                      <SelectItem value="sold">Sold</SelectItem>
-                    </SelectContent>
+                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="available">Available</SelectItem><SelectItem value="reserved">Reserved</SelectItem><SelectItem value="sold">Sold</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Assign Customer</Label>
-                  <Select value={editForm.customer_id || "none"} onValueChange={v => {
-                    const c = customers.find(c => c.id === v);
-                    setEditForm(p => ({ ...p, customer_id: v === "none" ? "" : v, customer_name: c ? c.name : "" }));
-                  }}>
-                    <SelectTrigger data-testid="assign-customer-select" className="mt-1"><SelectValue placeholder="Select customer" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">-- None --</SelectItem>
-                      {customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.customer_id})</SelectItem>)}
-                    </SelectContent>
+                  <Select value={editForm.customer_id || "none"} onValueChange={v => { const c = customers.find(c => c.id === v); setEditForm(p => ({ ...p, customer_id: v === "none" ? "" : v, customer_name: c ? c.name : "" })); }}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select customer" /></SelectTrigger>
+                    <SelectContent><SelectItem value="none">-- None --</SelectItem>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.customer_id})</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -490,50 +514,34 @@ export default function LayoutDetailPage() {
                   <div><Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">Agreement Date</Label><Input type="date" value={editForm.agreement_date} onChange={e => setEditForm(p => ({...p, agreement_date: e.target.value}))} className="mt-1" /></div>
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <Button data-testid="save-plot-btn" className="flex-1" onClick={handleUpdatePlot} disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
-                    {saving ? 'Saving...' : 'Save Changes'}
-                  </Button>
-                  <Button data-testid="download-statement-btn" variant="outline" onClick={downloadStatement}>
-                    <FileText className="w-4 h-4" />
-                  </Button>
+                  <Button data-testid="save-plot-btn" className="flex-1" onClick={handleUpdatePlotSheet} disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>{saving ? 'Saving...' : 'Save Changes'}</Button>
+                  <Button variant="outline" onClick={() => openEditPlot(selectedPlot)}><Pencil className="w-4 h-4" /></Button>
+                  <Button variant="outline" onClick={downloadStatement}><FileText className="w-4 h-4" /></Button>
                 </div>
               </TabsContent>
-
               <TabsContent value="payments" className="space-y-4 mt-4">
                 <div className="bg-neutral-50 rounded-lg p-4 space-y-3">
                   <p className="text-xs uppercase tracking-widest text-neutral-400 font-medium">Record Payment</p>
                   <div className="grid grid-cols-2 gap-2">
-                    <Input data-testid="plot-payment-amount" type="number" placeholder="Amount" value={payForm.amount} onChange={e => setPayForm(p => ({...p, amount: e.target.value}))} className="font-mono" />
-                    <Input data-testid="plot-payment-date" type="date" value={payForm.payment_date} onChange={e => setPayForm(p => ({...p, payment_date: e.target.value}))} />
+                    <Input type="number" placeholder="Amount" value={payForm.amount} onChange={e => setPayForm(p => ({...p, amount: e.target.value}))} className="font-mono" />
+                    <Input type="date" value={payForm.payment_date} onChange={e => setPayForm(p => ({...p, payment_date: e.target.value}))} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Select value={payForm.payment_mode} onValueChange={v => setPayForm(p => ({...p, payment_mode: v}))}>
-                      <SelectTrigger data-testid="plot-payment-mode"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="upi">UPI</SelectItem>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="cheque">Cheque</SelectItem>
-                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      </SelectContent>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="upi">UPI</SelectItem><SelectItem value="cash">Cash</SelectItem><SelectItem value="cheque">Cheque</SelectItem><SelectItem value="bank_transfer">Bank Transfer</SelectItem></SelectContent>
                     </Select>
-                    {payForm.payment_mode === 'cheque' && (
-                      <Input data-testid="plot-cheque-number" placeholder="Cheque No." value={payForm.cheque_number} onChange={e => setPayForm(p => ({...p, cheque_number: e.target.value}))} />
-                    )}
+                    {payForm.payment_mode === 'cheque' && <Input placeholder="Cheque No." value={payForm.cheque_number} onChange={e => setPayForm(p => ({...p, cheque_number: e.target.value}))} />}
                     <Input placeholder="Reference" value={payForm.reference_number} onChange={e => setPayForm(p => ({...p, reference_number: e.target.value}))} />
                   </div>
-                  <Button data-testid="submit-plot-payment-btn" size="sm" className="w-full" onClick={handleRecordPayment} disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
+                  <Button size="sm" className="w-full" onClick={handleRecordPayment} disabled={saving} style={{ backgroundColor: 'var(--brand-primary)' }}>
                     <IndianRupee className="w-3 h-3 mr-1" /> {saving ? 'Recording...' : 'Record Payment'}
                   </Button>
                 </div>
                 <div className="space-y-1">
-                  {plotPayments.length === 0 ? <p className="text-sm text-neutral-400 text-center py-4">No payments recorded</p> : plotPayments.map(p => (
+                  {plotPayments.length === 0 ? <p className="text-sm text-neutral-400 text-center py-4">No payments</p> : plotPayments.map(p => (
                     <div key={p.id} className="flex items-center justify-between p-2.5 bg-white border border-neutral-100 rounded-lg text-sm">
-                      <div>
-                        <span className="font-mono font-medium text-emerald-600">Rs.{p.amount.toLocaleString()}</span>
-                        <span className="text-neutral-400 mx-2">·</span>
-                        <span className="text-xs text-neutral-500 capitalize">{p.payment_mode}</span>
-                        {p.cheque_number && <span className="text-xs text-neutral-400 ml-1">(#{p.cheque_number})</span>}
-                      </div>
+                      <div><span className="font-mono font-medium text-emerald-600">Rs.{p.amount.toLocaleString()}</span><span className="text-neutral-400 mx-2">·</span><span className="text-xs text-neutral-500 capitalize">{p.payment_mode}</span></div>
                       <span className="text-xs text-neutral-400 font-mono">{p.payment_date}</span>
                     </div>
                   ))}
@@ -547,73 +555,36 @@ export default function LayoutDetailPage() {
       {/* Confirm Dialog */}
       <Dialog open={!!confirmDialog} onOpenChange={() => setConfirmDialog(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle style={{ fontFamily: 'Outfit' }}>Confirm Status Change</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle style={{ fontFamily: 'Outfit' }}>Confirm</DialogTitle></DialogHeader>
           <p className="text-sm text-neutral-600">{confirmDialog?.message}</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
-            <Button data-testid="confirm-status-change-btn" onClick={confirmDialog?.onConfirm} style={{ backgroundColor: 'var(--brand-primary)' }}>Confirm</Button>
+            <Button onClick={confirmDialog?.onConfirm} style={{ backgroundColor: 'var(--brand-primary)' }}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Full-Screen Map Viewer ── */}
+      {/* Full-Screen Map Viewer */}
       {viewingMap && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col" data-testid="map-viewer-overlay">
-          {/* Toolbar */}
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 bg-black/60 backdrop-blur-sm border-b border-white/10 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <MapPin className="w-4 h-4 text-cyan-400 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-white truncate">{viewingMap.file_name}</p>
-                <p className="text-[10px] text-neutral-400">{viewingMap.uploader_name} · {new Date(viewingMap.upload_date).toLocaleDateString()} · {(viewingMap.file_size / 1024).toFixed(0)} KB</p>
-              </div>
+              <p className="text-sm font-medium text-white truncate">{viewingMap.file_name}</p>
             </div>
             <div className="flex items-center gap-1.5">
-              <Button data-testid="viewer-zoom-out" variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setViewerZoom(z => Math.max(z - 0.25, 0.25))}>
-                <ZoomOut className="w-4 h-4" />
-              </Button>
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setViewerZoom(z => Math.max(z - 0.25, 0.25))}><ZoomOut className="w-4 h-4" /></Button>
               <span className="text-xs font-mono text-neutral-300 w-12 text-center">{Math.round(viewerZoom * 100)}%</span>
-              <Button data-testid="viewer-zoom-in" variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setViewerZoom(z => Math.min(z + 0.25, 5))}>
-                <ZoomIn className="w-4 h-4" />
-              </Button>
-              <Button data-testid="viewer-reset-zoom" variant="ghost" size="sm" className="text-white hover:bg-white/10 text-xs ml-1" onClick={() => setViewerZoom(1)}>
-                Reset
-              </Button>
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => setViewerZoom(z => Math.min(z + 0.25, 5))}><ZoomIn className="w-4 h-4" /></Button>
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/10 text-xs ml-1" onClick={() => setViewerZoom(1)}>Reset</Button>
               <div className="w-px h-6 bg-white/20 mx-2" />
-              <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => downloadMap(viewingMap)}>
-                <Download className="w-4 h-4" />
-              </Button>
-              <Button data-testid="viewer-close" variant="ghost" size="icon" className="text-white hover:bg-red-500/80" onClick={closeMapViewer}>
-                <X className="w-5 h-5" />
-              </Button>
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white/10" onClick={() => downloadMap(viewingMap)}><Download className="w-4 h-4" /></Button>
+              <Button variant="ghost" size="icon" className="text-white hover:bg-red-500/80" onClick={closeMapViewer}><X className="w-5 h-5" /></Button>
             </div>
           </div>
-
-          {/* Map Content */}
-          <div className="flex-1 overflow-auto flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) closeMapViewer(); }}>
-            {viewingMap.file_type?.startsWith('image') && (
-              <img
-                src={viewingMap.blobUrl}
-                alt={viewingMap.file_name}
-                data-testid="map-viewer-image"
-                className="max-w-none select-none"
-                style={{
-                  transform: `scale(${viewerZoom})`,
-                  transformOrigin: 'center center',
-                  transition: 'transform 0.2s ease-out',
-                }}
-                draggable={false}
-              />
-            )}
-            {viewingMap.file_type === 'application/pdf' && (
-              <iframe
-                src={viewingMap.blobUrl}
-                title={viewingMap.file_name}
-                data-testid="map-viewer-pdf"
-                className="w-full h-full rounded-lg border border-white/10"
-                style={{ minHeight: '80vh' }}
-              />
-            )}
+          <div className="flex-1 overflow-auto flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) closeMapViewer(); }}>
+            {viewingMap.file_type?.startsWith('image') && <img src={viewingMap.blobUrl} alt={viewingMap.file_name} className="max-w-none select-none" style={{ transform: `scale(${viewerZoom})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }} draggable={false} />}
+            {viewingMap.file_type === 'application/pdf' && <iframe src={viewingMap.blobUrl} title={viewingMap.file_name} className="w-full h-full rounded-lg border border-white/10" style={{ minHeight: '80vh' }} />}
           </div>
         </div>
       )}

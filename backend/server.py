@@ -1059,16 +1059,14 @@ class LayoutInput(BaseModel):
 class PlotInput(BaseModel):
     layout_id: str
     plot_number: str
-    length: float
-    width: float
+    area: float
     plot_type: str = "residential"
     price_per_sqft: float
     status: str = "available"
 
 class PlotUpdateInput(BaseModel):
     plot_number: str = ""
-    length: float = 0
-    width: float = 0
+    area: float = 0
     plot_type: str = ""
     price_per_sqft: float = 0
     status: str = ""
@@ -1139,19 +1137,19 @@ async def delete_layout(layout_id: str, request: Request):
 @api_router.post("/plots")
 async def create_plot(inp: PlotInput, request: Request):
     user = await get_current_user(request)
-    if inp.length <= 0 or inp.width <= 0:
-        raise HTTPException(status_code=400, detail="Length and Width must be positive numbers")
+    if inp.area <= 0:
+        raise HTTPException(status_code=400, detail="Area must be a positive number")
     if inp.price_per_sqft <= 0:
         raise HTTPException(status_code=400, detail="Price per sq. ft must be greater than 0")
     existing = await db.plots.find_one({"layout_id": inp.layout_id, "plot_number": inp.plot_number}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Plot already exists with this number in this layout")
-    area = round(inp.length * inp.width, 2)
+    area = round(inp.area, 2)
     total_price = round(area * inp.price_per_sqft, 2)
     doc = {
         "id": str(uuid.uuid4()), "layout_id": inp.layout_id,
-        "plot_number": inp.plot_number, "length": inp.length, "width": inp.width,
-        "area": area, "plot_type": inp.plot_type, "price_per_sqft": inp.price_per_sqft,
+        "plot_number": inp.plot_number, "area": area,
+        "plot_type": inp.plot_type, "price_per_sqft": inp.price_per_sqft,
         "total_price": total_price, "status": inp.status,
         "customer_id": "", "customer_name": "", "booking_date": "", "agreement_date": "",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1193,10 +1191,8 @@ async def update_plot(plot_id: str, inp: PlotUpdateInput, request: Request):
         if dup:
             raise HTTPException(status_code=400, detail="Plot number already exists in this layout")
         update["plot_number"] = inp.plot_number
-    if inp.length > 0 and inp.width > 0:
-        update["length"] = inp.length
-        update["width"] = inp.width
-        update["area"] = round(inp.length * inp.width, 2)
+    if inp.area > 0:
+        update["area"] = round(inp.area, 2)
         ppf = inp.price_per_sqft if inp.price_per_sqft > 0 else plot.get("price_per_sqft", 0)
         update["total_price"] = round(update["area"] * ppf, 2)
     if inp.price_per_sqft > 0:
