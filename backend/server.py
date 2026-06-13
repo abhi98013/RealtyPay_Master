@@ -1221,6 +1221,17 @@ async def update_plot(plot_id: str, inp: PlotUpdateInput, request: Request):
     updated = await db.plots.find_one({"id": plot_id}, {"_id": 0})
     return updated
 
+@api_router.delete("/plots/{plot_id}")
+async def delete_plot(plot_id: str, request: Request):
+    user = await get_current_user(request)
+    plot = await db.plots.find_one({"id": plot_id}, {"_id": 0})
+    if not plot:
+        raise HTTPException(status_code=404, detail="Plot not found")
+    await db.plots.delete_one({"id": plot_id})
+    await db.plot_payments.delete_many({"plot_id": plot_id})
+    await _audit_log(user, "delete_plot", "plot", plot_id, {"plot_number": plot.get("plot_number", "")})
+    return {"message": "Plot deleted"}
+
 # ═══════════════════════════════════════════
 #  MODULE 2: MAP UPLOAD
 # ═══════════════════════════════════════════

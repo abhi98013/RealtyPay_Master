@@ -167,6 +167,16 @@ export default function LayoutDetailPage() {
     }
   };
 
+  const handleDeletePlot = async (plot) => {
+    try {
+      await api.delete(`/plots/${plot.id}`);
+      toast.success(`Plot ${plot.plot_number} deleted`);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete plot');
+    }
+  };
+
   const handleUpdatePlotSheet = async () => {
     if (!selectedPlot) return;
     setSaving(true);
@@ -427,6 +437,9 @@ export default function LayoutDetailPage() {
                         </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-neutral-100" onClick={() => openPlotSheet(p)}>
                           <Eye className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button data-testid={`delete-plot-${p.plot_number}`} variant="ghost" size="icon" className="h-7 w-7 hover:bg-red-50 hover:text-red-600" onClick={() => setConfirmDialog({ message: `Delete plot "${p.plot_number}" (${p.area} sqft, Rs.${(p.total_price||0).toLocaleString()})? This will also remove all payments for this plot.`, onConfirm: () => { handleDeletePlot(p); setConfirmDialog(null); } })}>
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </TableCell>
