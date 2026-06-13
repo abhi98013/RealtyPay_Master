@@ -9,7 +9,8 @@ import { toast } from 'sonner';
 export default function BrandSettingsPage() {
   const [brand, setBrand] = useState({
     brand_name: '', tagline: '', primary_color: '#00AFD1',
-    accent_color: '#2D2D2D', footer_text: '', penalty_rate: 1, phone: ''
+    accent_color: '#2D2D2D', footer_text: '', penalty_rate: 1, phone: '',
+    dlt_sender_id: '', dlt_entity_id: '', dlt_template_id: ''
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -125,6 +126,33 @@ export default function BrandSettingsPage() {
                 <input data-testid="logo-upload-input" type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} className="hidden" disabled={uploading} />
               </label>
               <p className="text-xs text-neutral-400 mt-1">PNG or JPG, recommended 200x200px</p>
+            </div>
+          </div>
+
+          {/* DLT SMS Configuration */}
+          <div className="border-t border-neutral-200 pt-5">
+            <p className="text-xs uppercase tracking-widest text-neutral-400 font-medium mb-3">SMS Configuration (DLT)</p>
+            <p className="text-xs text-neutral-400 mb-3">Register at any telecom DLT portal (Jio/Airtel/Vodafone), then add your credentials here. Without DLT, SMS will use the quick route (may be blocked).</p>
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">DLT Sender ID</Label>
+                <Input data-testid="dlt-sender-input" value={brand.dlt_sender_id || ''} onChange={e => updateField('dlt_sender_id', e.target.value)} className="mt-1 font-mono" placeholder="e.g., KKNJAS (6 chars)" maxLength={6} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">DLT Entity ID</Label>
+                  <Input data-testid="dlt-entity-input" value={brand.dlt_entity_id || ''} onChange={e => updateField('dlt_entity_id', e.target.value)} className="mt-1 font-mono" placeholder="Optional" />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">DLT Template ID</Label>
+                  <Input data-testid="dlt-template-input" value={brand.dlt_template_id || ''} onChange={e => updateField('dlt_template_id', e.target.value)} className="mt-1 font-mono" placeholder="Optional" />
+                </div>
+              </div>
+              <div className={`text-xs px-3 py-2 rounded-lg ${brand.dlt_sender_id ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                {brand.dlt_sender_id
+                  ? `DLT route active — SMS will send via DLT with sender "${brand.dlt_sender_id}"`
+                  : 'DLT not configured — SMS will attempt quick route (may fail if blocked)'}
+              </div>
             </div>
           </div>
 

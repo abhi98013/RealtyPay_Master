@@ -169,6 +169,9 @@ class BrandInput(BaseModel):
     footer_text: str = ""
     penalty_rate: float = 1.0
     phone: str = ""
+    dlt_sender_id: str = ""
+    dlt_entity_id: str = ""
+    dlt_template_id: str = ""
 
 class MessageInput(BaseModel):
     customer_id: str
@@ -564,7 +567,10 @@ async def record_payment(inp: PaymentInput, request: Request):
     sms_text = f"Dear {customer['name']}, payment of Rs.{inp.amount_paid:,.0f} received. Ref No: {ref_no}. Date: {pay_date}. Thank you. - {brand.get('brand_name', 'KrushnaKunj Association') if brand else 'KrushnaKunj Association'}"
     phone = customer.get("phone", "")
     if phone:
-        sms_result = _send_fast2sms(phone, sms_text[:160])
+        dlt_sender = brand.get("dlt_sender_id", "") if brand else ""
+        dlt_entity = brand.get("dlt_entity_id", "") if brand else ""
+        dlt_template = brand.get("dlt_template_id", "") if brand else ""
+        sms_result = _send_fast2sms(phone, sms_text[:160], sender_id=dlt_sender, entity_id=dlt_entity, template_id=dlt_template)
         payment["sms_sent"] = sms_result.get("success", False)
         payment["sms_message"] = sms_text[:160]
         # Log SMS
@@ -755,8 +761,8 @@ def validate_indian_phone(phone: str) -> str:
         return ""
     return digits
 
-def _send_fast2sms(phone: str, message: str) -> dict:
-    """Send SMS via Fast2SMS API. Returns response dict."""
+def _send_fast2sms(phone: str, message: str, sender_id: str = "", entity_id: str = "", template_id: str = "") -> dict:
+    """Send SMS via Fast2SMS API. Tries DLT route if sender_id is set, otherwise tries quick route."""
     api_key = os.environ.get("FAST2SMS_API_KEY", "")
     if not api_key:
         return {"success": False, "error": "Fast2SMS API key not configured"}
@@ -773,13 +779,27 @@ def _send_fast2sms(phone: str, message: str) -> dict:
             "Content-Type": "application/x-www-form-urlencoded",
             "Cache-Control": "no-cache"
         }
-        payload = {
-            "route": "q",
-            "message": message,
-            "language": "english",
-            "flash": "0",
-            "numbers": clean_phone,
-        }
+        # Use DLT route if sender_id is configured
+        if sender_id:
+            payload = {
+                "route": "dlt_manual",
+                "sender_id": sender_id,
+                "message": message,
+                "numbers": clean_phone,
+            }
+            if entity_id:
+                payload["entity_id"] = entity_id
+            if template_id:
+                payload["template_id"] = template_id
+        else:
+            # Fallback to quick route
+            payload = {
+                "route": "q",
+                "message": message,
+                "language": "english",
+                "flash": "0",
+                "numbers": clean_phone,
+            }
         resp = requests.post(FAST2SMS_URL, data=payload, headers=headers, timeout=30)
         result = resp.json()
         logger.info(f"Fast2SMS response for {clean_phone}: {result}")
@@ -841,7 +861,11 @@ async def send_sms(inp: SMSInput, request: Request):
     if not clean:
         raise HTTPException(status_code=400, detail=f"Invalid mobile number. Must be a valid 10-digit Indian mobile number.")
 
-    result = _send_fast2sms(phone, inp.message)
+    brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0}) or {}
+    dlt_sender = brand.get("dlt_sender_id", "")
+    dlt_entity = brand.get("dlt_entity_id", "")
+    dlt_template = brand.get("dlt_template_id", "")
+    result = _send_fast2sms(phone, inp.message, sender_id=dlt_sender, entity_id=dlt_entity, template_id=dlt_template)
 
     msg_doc = {
         "id": str(uuid.uuid4()), "customer_id": inp.customer_id or "",
@@ -889,7 +913,7 @@ async def bulk_send_sms(inp: BulkSMSInput, request: Request):
         if not text.strip():
             results["failed"] += 1
             continue
-        sms_result = _send_fast2sms(phone, text[:160])
+        sms_result = _send_fast2sms(phone, text[:160], sender_id=brand.get("dlt_sender_id", ""), entity_id=brand.get("dlt_entity_id", ""), template_id=brand.get("dlt_template_id", ""))
         status = "delivered" if sms_result.get("success") else "failed"
         await db.messages.insert_one({
             "id": str(uuid.uuid4()), "customer_id": cid,
