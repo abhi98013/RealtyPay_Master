@@ -3,18 +3,20 @@ import api, { API_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Palette, Upload, Building2, Save } from 'lucide-react';
+import { Palette, Upload, Building2, Save, MessageSquare, Smartphone, Eye, EyeOff, CircleCheck as CheckCircle2, Circle as XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function BrandSettingsPage() {
   const [brand, setBrand] = useState({
     brand_name: '', tagline: '', primary_color: '#00AFD1',
     accent_color: '#2D2D2D', footer_text: '', penalty_rate: 1, phone: '',
-    dlt_sender_id: '', dlt_entity_id: '', dlt_template_id: ''
+    dlt_sender_id: '', dlt_entity_id: '', dlt_template_id: '',
+    fast2sms_api_key: '',
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [logoUrl, setLogoUrl] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
     api.get('/brand').then(r => {
@@ -152,6 +154,58 @@ export default function BrandSettingsPage() {
                 {brand.dlt_sender_id
                   ? `DLT route active — SMS will send via DLT with sender "${brand.dlt_sender_id}"`
                   : 'DLT not configured — SMS will attempt quick route (may fail if blocked)'}
+              </div>
+            </div>
+          </div>
+
+          {/* Fast2SMS API Key + WhatsApp */}
+          <div className="border-t border-neutral-200 pt-5">
+            <div className="flex items-center gap-2 mb-1">
+              <MessageSquare className="w-4 h-4 text-[#25D366]" />
+              <p className="text-xs uppercase tracking-widest text-neutral-400 font-medium">Fast2SMS API Key</p>
+              {brand.fast2sms_api_key ? (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 className="w-3 h-3" /> Configured
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                  <XCircle className="w-3 h-3" /> Not Set
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-neutral-400 mb-3">
+              Used for both SMS and WhatsApp sending. Get your key from{' '}
+              <span className="font-medium text-neutral-600">fast2sms.com → API → API Credentials</span>.
+            </p>
+            <div className="relative">
+              <Label className="text-xs uppercase tracking-wider text-neutral-500 font-medium">API Key</Label>
+              <div className="relative mt-1">
+                <Input
+                  data-testid="fast2sms-api-key-input"
+                  type={showApiKey ? 'text' : 'password'}
+                  value={brand.fast2sms_api_key || ''}
+                  onChange={e => updateField('fast2sms_api_key', e.target.value)}
+                  className="font-mono pr-10"
+                  placeholder="Paste your Fast2SMS API key here"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${brand.fast2sms_api_key ? 'bg-[#DCF8C6] border-green-200 text-green-800' : 'bg-neutral-50 border-neutral-200 text-neutral-400'}`}>
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                WhatsApp {brand.fast2sms_api_key ? 'Live' : 'Not Active'}
+              </div>
+              <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${brand.fast2sms_api_key ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-neutral-50 border-neutral-200 text-neutral-400'}`}>
+                <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                SMS {brand.fast2sms_api_key ? 'Live' : 'Not Active'}
               </div>
             </div>
           </div>

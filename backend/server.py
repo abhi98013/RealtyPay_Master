@@ -181,6 +181,8 @@ class BrandInput(BaseModel):
     dlt_sender_id: str = ""
     dlt_entity_id: str = ""
     dlt_template_id: str = ""
+    fast2sms_api_key: str = ""
+    wa_message_type: str = "text"
 
 class MessageInput(BaseModel):
     customer_id: str
@@ -339,6 +341,17 @@ async def update_brand(inp: BrandInput, request: Request):
     await db.brand_settings.update_one({"id": "default"}, {"$set": update}, upsert=True)
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0})
     return brand
+
+@api_router.get("/messaging/status")
+async def messaging_status(request: Request):
+    await get_current_user(request)
+    brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0}) or {}
+    api_key = brand.get("fast2sms_api_key") or os.environ.get("FAST2SMS_API_KEY", "")
+    return {
+        "sms_configured": bool(api_key),
+        "whatsapp_configured": bool(api_key),
+        "api_key_set": bool(api_key),
+    }
 
 @api_router.post("/brand/logo")
 async def upload_logo(request: Request, file: UploadFile = File(...)):
@@ -579,7 +592,7 @@ async def record_payment(inp: PaymentInput, request: Request):
         dlt_sender = brand.get("dlt_sender_id", "") if brand else ""
         dlt_entity = brand.get("dlt_entity_id", "") if brand else ""
         dlt_template = brand.get("dlt_template_id", "") if brand else ""
-        sms_result = _send_fast2sms(phone, sms_text[:160], sender_id=dlt_sender, entity_id=dlt_entity, template_id=dlt_template)
+        sms_result = _send_fast2sms(phone, sms_text[:160], sender_id=dlt_sender, entity_id=dlt_entity, template_id=dlt_template, api_key=brand.get("fast2sms_api_key", "") if brand else "")
         payment["sms_sent"] = sms_result.get("success", False)
         payment["sms_message"] = sms_text[:160]
         # Log SMS
@@ -703,8 +716,62 @@ async def _send_mock_message(customer, payment, msg_type, brand):
     msg_doc = {
         "id": str(uuid.uuid4()), "customer_id": customer["id"],
         "customer_name": customer["name"], "phone": customer.get("phone", ""),
-        "message_type": msg_type, "message_text": text,
+        "message_type": msg_type, "message_text": text, "channel": "whatsapp",
         "status": "delivered", "sent_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.messages.insert_one(msg_doc)
+    return msg_doc
+
+FAST2SMS_WA_URL = "https://www.fast2sms.com/dev/whatsappV1"
+
+def _send_fast2sms_whatsapp(phone: str, message: str, api_key: str) -> dict:
+    """Send WhatsApp message via Fast2SMS API."""
+    clean_phone = validate_indian_phone(phone)
+    if not clean_phone:
+        return {"success": False, "error": "Invalid phone number"}
+    headers = {"authorization": api_key, "Content-Type": "application/x-www-form-urlencoded"}
+    payload = {
+        "numbers": clean_phone,
+        "message_type": "text",
+        "message": message,
+    }
+    try:
+        resp = requests.post(FAST2SMS_WA_URL, data=payload, headers=headers, timeout=30)
+        result = resp.json()
+        logger.info(f"Fast2SMS WhatsApp response for {clean_phone}: {result}")
+        return {
+            "success": result.get("return", False),
+            "message": result.get("message", ""),
+            "request_id": result.get("request_id", ""),
+            "raw": result,
+        }
+    except Exception as e:
+        logger.error(f"Fast2SMS WhatsApp error: {e}")
+        return {"success": False, "error": str(e)}
+
+async def _dispatch_whatsapp(customer, payment, msg_type, brand) -> dict:
+    """Send via real Fast2SMS WA API if key is configured, else mock."""
+    api_key = (brand or {}).get("fast2sms_api_key") or os.environ.get("FAST2SMS_API_KEY", "")
+    text = generate_message(msg_type, customer, payment, brand)
+    phone = customer.get("phone", "")
+
+    if api_key and phone:
+        result = _send_fast2sms_whatsapp(phone, text, api_key)
+        status = "delivered" if result.get("success") else "failed"
+        error = result.get("error", "") or result.get("message", "")
+        if result.get("success"):
+            error = ""
+    else:
+        status = "pending" if not api_key else "failed"
+        error = "Fast2SMS API key not configured" if not api_key else "No phone number"
+
+    msg_doc = {
+        "id": str(uuid.uuid4()), "customer_id": customer["id"],
+        "customer_name": customer["name"], "phone": phone,
+        "message_type": msg_type, "message_text": text, "channel": "whatsapp",
+        "status": status, "error": error,
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "is_mock": not bool(api_key),
     }
     await db.messages.insert_one(msg_doc)
     return msg_doc
@@ -716,19 +783,20 @@ async def send_whatsapp(inp: MessageInput, request: Request):
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0})
-    # Get latest payment for context
     payment = await db.payments.find_one({"customer_id": inp.customer_id}, {"_id": 0}, sort=[("year", -1), ("month", -1)])
     if not payment:
         payment = {"month": datetime.now(timezone.utc).month, "year": datetime.now(timezone.utc).year, "amount_paid": 0, "remaining": customer.get("emi_amount", 0), "penalty_amount": 0, "penalty_days": 0}
-    msg_doc = await _send_mock_message(customer, payment, inp.message_type, brand)
+    msg_doc = await _dispatch_whatsapp(customer, payment, inp.message_type, brand)
     msg_doc.pop("_id", None)
-    return {"message": "Message sent (MOCK)", "data": msg_doc}
+    is_mock = msg_doc.get("is_mock", True)
+    return {"message": "WhatsApp sent" if not is_mock else "Message queued (API key not set)", "data": msg_doc}
 
 @api_router.post("/whatsapp/bulk-send")
 async def bulk_send(inp: BulkMessageInput, request: Request):
     await get_current_user(request)
     brand = await db.brand_settings.find_one({"id": "default"}, {"_id": 0})
     results = []
+    sent = failed = 0
     for cid in inp.customer_ids:
         customer = await db.customers.find_one({"id": cid}, {"_id": 0})
         if not customer:
@@ -736,10 +804,16 @@ async def bulk_send(inp: BulkMessageInput, request: Request):
         payment = await db.payments.find_one({"customer_id": cid}, {"_id": 0}, sort=[("year", -1), ("month", -1)])
         if not payment:
             payment = {"month": datetime.now(timezone.utc).month, "year": datetime.now(timezone.utc).year, "amount_paid": 0, "remaining": customer.get("emi_amount", 0), "penalty_amount": 0, "penalty_days": 0}
-        msg = await _send_mock_message(customer, payment, inp.message_type, brand)
+        msg = await _dispatch_whatsapp(customer, payment, inp.message_type, brand)
         msg.pop("_id", None)
         results.append(msg)
-    return {"message": f"Sent {len(results)} messages (MOCK)", "data": results}
+        if msg["status"] == "delivered":
+            sent += 1
+        else:
+            failed += 1
+    api_key = (brand or {}).get("fast2sms_api_key") or os.environ.get("FAST2SMS_API_KEY", "")
+    label = f"Sent: {sent}, Failed: {failed}" if api_key else f"Queued {len(results)} messages (configure Fast2SMS API key to send)"
+    return {"message": label, "data": results}
 
 @api_router.get("/whatsapp/messages")
 async def get_messages(request: Request, customer_id: str = ""):
@@ -770,9 +844,10 @@ def validate_indian_phone(phone: str) -> str:
         return ""
     return digits
 
-def _send_fast2sms(phone: str, message: str, sender_id: str = "", entity_id: str = "", template_id: str = "") -> dict:
+def _send_fast2sms(phone: str, message: str, sender_id: str = "", entity_id: str = "", template_id: str = "", api_key: str = "") -> dict:
     """Send SMS via Fast2SMS API. Tries DLT route if sender_id is set, otherwise tries quick route."""
-    api_key = os.environ.get("FAST2SMS_API_KEY", "")
+    if not api_key:
+        api_key = os.environ.get("FAST2SMS_API_KEY", "")
     if not api_key:
         return {"success": False, "error": "Fast2SMS API key not configured"}
     clean_phone = validate_indian_phone(phone)
@@ -874,7 +949,8 @@ async def send_sms(inp: SMSInput, request: Request):
     dlt_sender = brand.get("dlt_sender_id", "")
     dlt_entity = brand.get("dlt_entity_id", "")
     dlt_template = brand.get("dlt_template_id", "")
-    result = _send_fast2sms(phone, inp.message, sender_id=dlt_sender, entity_id=dlt_entity, template_id=dlt_template)
+    brand_api_key = brand.get("fast2sms_api_key", "")
+    result = _send_fast2sms(phone, inp.message, sender_id=dlt_sender, entity_id=dlt_entity, template_id=dlt_template, api_key=brand_api_key)
 
     msg_doc = {
         "id": str(uuid.uuid4()), "customer_id": inp.customer_id or "",
@@ -922,7 +998,7 @@ async def bulk_send_sms(inp: BulkSMSInput, request: Request):
         if not text.strip():
             results["failed"] += 1
             continue
-        sms_result = _send_fast2sms(phone, text[:160], sender_id=brand.get("dlt_sender_id", ""), entity_id=brand.get("dlt_entity_id", ""), template_id=brand.get("dlt_template_id", ""))
+        sms_result = _send_fast2sms(phone, text[:160], sender_id=brand.get("dlt_sender_id", ""), entity_id=brand.get("dlt_entity_id", ""), template_id=brand.get("dlt_template_id", ""), api_key=brand.get("fast2sms_api_key", ""))
         status = "delivered" if sms_result.get("success") else "failed"
         await db.messages.insert_one({
             "id": str(uuid.uuid4()), "customer_id": cid,
