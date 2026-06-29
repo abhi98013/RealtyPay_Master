@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:*)",
+      "Bash(for port in *)",
+      "Bash(pip3 list *)",
+      "Bash(pip show *)",
+      "Bash(pip3 show *)"
+    ]
+  }
+}
