@@ -40,25 +40,37 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # ─── CORS ───
+_base_origins = [
+    "https://krushnakunjassociation.com",
+    "https://www.krushnakunjassociation.com",
+    "https://krishnakunjassociation.com",
+    "https://www.krishnakunjassociation.com",
+    "https://property-receivables.preview.emergentagent.com",
+    "https://property-receivables.emergent.host",
+    "http://localhost:3000",
+    "http://localhost:8001",
+]
+_extra = os.environ.get("CORS_ORIGINS", "")
+_all_origins = _base_origins + [o.strip() for o in _extra.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[
-        "https://krushnakunjassociation.com",
-        "https://www.krushnakunjassociation.com",
-        "https://krishnakunjassociation.com",
-        "https://www.krishnakunjassociation.com",
-        "https://property-receivables.preview.emergentagent.com",
-        "https://property-receivables.emergent.host",
-        "http://localhost:3000",
-    ],
+    allow_origins=_all_origins,
+    allow_origin_regex=r"https://.*\.(emergentagent\.com|emergent\.host|bolt\.new)$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ─── HELPERS ───
+_jwt_secret = os.environ.get("JWT_SECRET", "")
+if not _jwt_secret:
+    import secrets as _secrets
+    _jwt_secret = _secrets.token_hex(32)
+    logging.getLogger(__name__).warning("JWT_SECRET not set — using auto-generated ephemeral secret. Sessions will invalidate on restart.")
+
 def get_jwt_secret():
-    return os.environ["JWT_SECRET"]
+    return _jwt_secret
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -252,7 +264,8 @@ async def shutdown():
 #  AUTH ROUTES
 # ═══════════════════════════════════════════
 @api_router.post("/auth/register")
-async def register(inp: RegisterInput, response: Response):
+async def register(inp: RegisterInput, request: Request, response: Response):
+    _secure = request.headers.get("x-forwarded-proto", "http") == "https"
     email = inp.email.strip().lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -266,20 +279,21 @@ async def register(inp: RegisterInput, response: Response):
     await db.users.insert_one(user_doc)
     access_token = create_access_token(user_id, email, user_doc["role"])
     refresh_token = create_refresh_token(user_id)
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=86400, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=_secure, samesite="lax", max_age=86400, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=_secure, samesite="lax", max_age=604800, path="/")
     return {"id": user_id, "email": email, "name": inp.name, "role": user_doc["role"], "token": access_token}
 
 @api_router.post("/auth/login")
-async def login(inp: LoginInput, response: Response):
+async def login(inp: LoginInput, request: Request, response: Response):
+    _secure = request.headers.get("x-forwarded-proto", "http") == "https"
     email = inp.email.strip().lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(inp.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     access_token = create_access_token(user["id"], email, user["role"])
     refresh_token = create_refresh_token(user["id"])
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=86400, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=_secure, samesite="lax", max_age=86400, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=_secure, samesite="lax", max_age=604800, path="/")
     return {"id": user["id"], "email": email, "name": user["name"], "role": user["role"], "token": access_token}
 
 @api_router.get("/auth/me")
