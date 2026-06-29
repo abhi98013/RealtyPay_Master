@@ -20,9 +20,18 @@ STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = "realtypay"
 storage_key = None
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mongo_url = os.environ.get('MONGO_URL', '')
+db_name = os.environ.get('DB_NAME', 'realtypay')
+
+if mongo_url:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[db_name]
+else:
+    import mongomock_motor
+    client = mongomock_motor.AsyncMongoMockClient()
+    db = client[db_name]
+    logger_early = logging.getLogger(__name__)
+    logger_early.warning("No MONGO_URL set — using in-memory mongomock database")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
