@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { UserPlus, Search, Phone, ChevronRight, MoreHorizontal, Pencil, Trash2, Eye, AlertTriangle } from 'lucide-react';
+import { UserPlus, Search, Phone, ChevronRight, MoveHorizontal as MoreHorizontal, Pencil, Trash2, Eye, TriangleAlert as AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const emptyCustomer = {
@@ -109,6 +109,7 @@ export default function CustomersPage() {
       .finally(() => setLoading(false));
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [search]);
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));

@@ -42,6 +42,7 @@ export default function PaymentTrackerPage() {
       .finally(() => setLoading(false));
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [year]);
 
   const openPaySheet = (customer, month, payment) => {
@@ -241,6 +242,7 @@ export default function PaymentTrackerPage() {
                 <div className="text-center py-6">
                   <p className="text-sm text-neutral-500">This payment is already {selectedCell.payment.status}.</p>
                   {selectedCell.payment?.payment_mode && <p className="text-xs text-neutral-400 mt-1">Mode: {selectedCell.payment.payment_mode} · Ref: {selectedCell.payment.reference_number || 'N/A'}</p>}
+                  }
                 </div>
               )}
             </div>

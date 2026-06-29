@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Wallet, TrendingUp, CheckCircle2, AlertTriangle, Download, IndianRupee, BarChart3 } from 'lucide-react';
+import { Wallet, TrendingUp, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, Download, IndianRupee, ChartBar as BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PIE_COLORS = ['#00AFD1', '#2D2D2D', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -30,6 +30,7 @@ export default function CashFlowPage() {
     } catch { toast.error('Failed to load statement'); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadStatement(); }, [period]);
 
   if (loading || !stats) {
